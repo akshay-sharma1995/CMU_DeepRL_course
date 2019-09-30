@@ -27,15 +27,15 @@ class QNetwork(tf.keras.Model):
 		self.obs_space = obs_space
 		self.action_space = action_space
 		self.model = Sequential()
-		pdb.set_trace()
+	#	pdb.set_trace()
 		self.input_dim = self.obs_space.shape[0]
 		self.model.add(Dense(32,input_dim=self.input_dim, activation='relu'))
 		self.model.add(Dense(16,activation='relu'))		
 		self.model.add(Dense(self.action_space.n))
 		
 		self.model.compile(optimizer='adam',
-							loss=keras.losses.mean_squared_error,
-							metrics=['accuracy'])
+				loss=keras.losses.mean_squared_error,
+				metrics=['accuracy'])
 
 		pass
 
@@ -118,6 +118,7 @@ class DQN_Agent():
 		self.action_space = self.env.action_space
 		#input_dim = self.env.observation_space.shape[0] + self.env.action_space.n
 		self.Q_net = QNetwork(self.environment_name,self.obs_space, self.action_space)
+		keras.initializers.Initializer()
 		self.num_episodes = 10
 		self.num_iterations = 10
 		self.replay_buffer = Replay_Memory()
@@ -129,15 +130,19 @@ class DQN_Agent():
 	def epsilon_greedy_policy(self, q_values):
 		# Creating epsilon greedy probabilities to sample from. 
 		epsilon = 0.01
-		go_greedy = np.random.choice(2,1,[epsilon,1-epsilon])
-
-		action = np.argmax(q_values,axis=0) if go_greedy else np.random.choice(range(len(q_values)),1)
-
+		
+		go_greedy = np.random.choice(2,size=1,p=[epsilon,1-epsilon])[0]
+		if(go_greedy):
+			action = np.argmax(q_values)
+		else:
+			action = np.random.choice(q_values.shape[1],size=1)[0]
+		
+		#action = np.argmax(q_values,axis=1) if go_greedy else np.random.choice(q_values.shape[1],size=1)
 		return action
 
 	def greedy_policy(self, q_values):
 		# Creating greedy policy for test time. 
-		action = np.argmax(q_values,axis=0)
+		action = np.argmax(q_values,axis=1)
 		return action
 		pass 
 
@@ -180,7 +185,7 @@ class DQN_Agent():
 
 			X_train = np.array(X_train)
 			Y_train = np.array(q_values_target)
-			history = self.Q_net.fit(X_train,Y_train,epoch=5,verbose=1)
+			history = self.Q_net.mode.fit(X_train,Y_train,epoch=5,verbose=1)
 			loss += history.history['loss'][-1]
 			acc += history.history['accuracy'][-1]
 
@@ -208,7 +213,7 @@ class DQN_Agent():
 			done = False
 			while not done:
 				q_values = self.Q_net.predict(state_t)
-				action = epsilon_greedy_policy(q_values)
+				action = self.epsilon_greedy_policy(q_values)
 				state_t_1, reward, done, info = self.env.step(action)
 				cum_reward += reward
 				state_t = state_t_1.copy()
@@ -222,26 +227,45 @@ class DQN_Agent():
 	def burn_in_memory(self,burn_in):
 		# Initialize your replay memory with a burn_in number of episodes / transitions. 
 		
-		pdb.set_trace()
+	#	pdb.set_trace()
 		state_t = self.env.reset()
-
 		done = False
 
 		transition_counter = 0
+		
+	#	X = np.random.normal(size=(1000,4))
+	#	Y = np.zeros((1000,2))
+	#	his = self.Q_net.model.fit(X,Y,epochs=10,batch_size=256,verbose=1)
+	#	loss = his.history['loss'][-1]
+	#	acc = his.history['accuracy'][-1]
 
+		#print("loss, acc: ",loss ,acc)
+		#pdb.set_trace()
+		print("burn_in_start")
 		while transition_counter<burn_in:
-			while not done:
-				pdb.set_trace()
-				q_values = self.Q_net.predict(np.expand_dims(state_t,axis=0))
-				action = epsilon_greedy_policy(q_values)
-				state_t_1,reward,done,info = self.env.step(action)
-				if(done):
-					pdb.set_trace()
-				self.replay_mem.append((state_t,action,reward,state_t_1,done))
-				transition_counter += 1
+			#pdb.set_trace()
+			q_values = self.Q_net.model.predict(np.expand_dims(state_t,axis=0))
+			action = self.epsilon_greedy_policy(q_values)
+	#		print("action: {}".format(action))
+			#pdb.set_trace()
+			state_t_1,reward,done,info = self.env.step(action)
+			#if(done):
+			#	pdb.set_trace()
+			self.replay_buffer.append((state_t,action,reward,state_t_1,done))
+			transition_counter += 1
+			print(transition_counter)
+			print(done)
+			if(done):
+				state_t = self.env.reset()
+			else:
 				state_t = state_t_1.copy()
-				if(transition_counter==burn_in):
-					break
+		#	pdb.set_trace()
+			#state_t = state_t_1.copy()
+			if(transition_counter==burn_in):
+				
+				break
+	#	pdb.set_trace()
+		print("burn_in_over")
 		pass
 
 

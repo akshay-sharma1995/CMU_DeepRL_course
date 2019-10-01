@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-import tensorflow as tf
-import keras
-from keras.models import Sequential, Model
-from keras.layers import Dense, Input
+#import tensorflow as tf
+#import keras
+#from keras.models import Sequential, Model
+#from keras.layers import Dense, Input
 import numpy as np
 import gym
 import sys
@@ -15,7 +15,9 @@ import pdb
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
-
+from matplotlib import pyplot as plt
+import seaborn as sns
+sns.set()
 class QNetwork(nn.Module):
 
 	# This class essentially defines the network architecture. 
@@ -26,9 +28,11 @@ class QNetwork(nn.Module):
 		# Define your network architecture here. It is also a good idea to define any training operations 
 		# and optimizers here, initialize your variables, or alternately compile your model here.  
 		#pdb.set_trace()
+		super().__init__()
 		self.obs_space = obs_space
 		self.action_space = action_space
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+		print(self.device)
 		self.input_dim = self.obs_space.shape[0]
 
 		self.linear1 = nn.Linear(self.input_dim,32)
@@ -36,11 +40,11 @@ class QNetwork(nn.Module):
 		self.linear3 = nn.Linear(16,self.action_space.n)
 		
 	def forward(self,X):
-		
-		X = torch.tensor(X).to(device=self.device)
+	#	pdb.set_trace()	
+		X = torch.tensor(X).to(device=self.device).float()
 		x_em = F.relu(self.linear1(X))
 		x_em = F.relu(self.linear2(x_em))
-		out = self.linear3(x_em))
+		out = self.linear3(x_em)
 
 		return out
 
@@ -56,8 +60,8 @@ class QNetwork(nn.Module):
 		# Helper function to load an existing model.
 		# e.g.: torch.save(self.model.state_dict(), model_file)
 		
-		self.model = tf.keras.load_model(os.path.join("./model_weights",model_file))
-		
+		#self.model = tf.keras.load_model(os.path.join("./model_weights",model_file))
+		pass	
 
 	def load_model_weights(self,weight_file):
 		# Helper funciton to load model weights. 
@@ -67,15 +71,15 @@ class QNetwork(nn.Module):
 		self.model.load_state_dict(torch.load(weight_file))
 		
 		pass
-	def custom_mse_loss(y_true,y_pred):
-	## y_true: actual q_value of the state, chosen action
-	## y_pred: q_values for all the functions for the corresponding state
-
-		y_out = y_pred[0,actions]
-		loss = keras.losses.mean_squared_loss(y_true,y_out) 
-	
-		return loss
-
+#	def custom_mse_loss(y_true,y_pred):
+#	## y_true: actual q_value of the state, chosen action
+#	## y_pred: q_values for all the functions for the corresponding state
+#
+#		y_out = y_pred[0,actions]
+#		loss = keras.losses.mean_squared_loss(y_true,y_out) 
+#	
+#		return loss
+#
 		
 
 
@@ -138,12 +142,16 @@ class DQN_Agent():
 		self.action_space = self.env.action_space
 		#input_dim = self.env.observation_space.shape[0] + self.env.action_space.n
 		self.Q_net = QNetwork(self.environment_name,self.obs_space, self.action_space)
-		keras.initializers.Initializer()
+		
+		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+		if(torch.cuda.is_available()):
+			self.Q_net.cuda()
+		#keras.initializers.Initializer()
 		lr = 1e-3
-		self.optimizer = torch.optim.Adam(self.Q_net.parameter(),lr)
+		self.optimizer = torch.optim.Adam(self.Q_net.parameters(),lr)
 
-		self.num_episodes = 10
-		self.num_iterations = 10
+		self.num_episodes = 100
+		self.num_iterations = 100
 		self.replay_buffer = Replay_Memory()
 		self.burn_in_memory(self.replay_buffer.burn_in)
 		self.gamma = 0.99
@@ -155,16 +163,18 @@ class DQN_Agent():
 		epsilon = 0.01
 		
 		go_greedy = np.random.choice(2,size=1,p=[epsilon,1-epsilon])[0]
+		#pdb.set_trace()
 		if(go_greedy):
 			action = np.argmax(q_values)
 		else:
-			action = np.random.choice(q_values.shape[1],size=1)[0]
+			action = np.random.randint(0,q_values.shape[1])
 		
 		#action = np.argmax(q_values,axis=1) if go_greedy else np.random.choice(q_values.shape[1],size=1)
 		return action
 
 	def greedy_policy(self, q_values):
 		# Creating greedy policy for test time. 
+		pdb.set_trace()	
 		action = np.argmax(q_values,axis=1)
 		return action
 		pass 
@@ -177,19 +187,19 @@ class DQN_Agent():
 		# When use replay memory, you should interact with environment here, and store these 
 		# transitions to memory, while also updating your model.
 	
-		pdb.set_trace()	
+		#pdb.set_trace()	
 		state_t = self.env.reset()
 		loss_per_step = []
 		acc_per_step = []
 		self.Q_net = self.Q_net.train()
 		for iter in range(self.num_iterations):
-			pdb.set_trace()
+			#pdb.set_trace()
 			## select action using an epsilon greedy policy
 			
 			with torch.no_grad():
 				q_values = self.Q_net(np.expand_dims(state_t,axis=0))
 			
-			action = self.epsilon_greedy_policy(q_values)
+			action = self.epsilon_greedy_policy(q_values.cpu().numpy())
 			
 			## take a step in the env using the action
 			state_t_1, reward, done, info = self.env.step(action)
@@ -201,40 +211,45 @@ class DQN_Agent():
 			sampled_transitions = self.replay_buffer.sample_batch(batch_size=self.batch_size)
 			
 				
+			q_values_target = [None]*self.batch_size
 			q_values_target = np.zeros((self.batch_size,self.action_space.n))
-			
+			q_pred_action_mask = np.zeros((self.batch_size,self.action_space.n))
 			#q_values_target = []
-			X_train = []*self.batch_size
-			action_idxs = np.zeros((self.batch_size,))
+			X_train = [None]*self.batch_size
+			#action_idxs = np.zeros((self.batch_size,),dtype=np.int64)
 			for transition_id, transition in enumerate(sampled_transitions):
 				r = transition[2]
 				a = transition[1]
 				s1 = transition[3]
 				d = transition[4]
-				pdb.set_trace()
-				action_idxs[transition_id] = a
+				#pdb.set_trace()
+			#	action_idxs[transition_id] = a
+				q_pred_action_mask[transition_id,a] = 1
 				if(transition[-1]):
-					q_values_target[transition_id] = r
+					q_values_target[transition_id,a] = r
 				else:
-					q_values_target[transition_id] = r + self.gamma * np.amax(self.Q_net.model.predict(np.expand_dims(s1,axis=0)))
+					with torch.no_grad():
+						q_values_target[transition_id,a] = r + self.gamma * torch.max(self.Q_net(np.expand_dims(s1,axis=0))).item()
 
 				X_train[transition_id] = s1.copy()
 
+			#pdb.set_trace()
 			X_train = np.array(X_train)
-			Y_train = q_values_target
+			Y_train = torch.tensor(q_values_target).float().to(device=self.device)
 			
 			self.Q_net = self.Q_net.train()
 			Y_pred_all_actions = self.Q_net(X_train)
-			
-			Y_pred = Y_pred_all_actions[:,action_idxs]
-			batch_loss = F.mse_loss(Y_pred, Y_target)
+			Y_pred_all_actions = torch.mul(Y_pred_all_actions,torch.tensor(q_pred_action_mask).float().to(device=self.device))
+			#Y_pred = Y_pred_all_actions[:,action_idxs]
+		#	Y_pred = torch.tensor([Y_pred_all_actions[i,action_idxs[i]] for i in range(0,Y_pred_all_actions.shape[0])])
+			batch_loss = F.mse_loss(Y_pred_all_actions, Y_train)
 			
 			self.optimizer.zero_grad()
 			batch_loss.backward()
 			self.optimizer.step()
 			
-			loss_per_step.append(loss.item())
-			acc_per_step.append(acc.item())
+			loss_per_step.append(batch_loss.item())
+			#acc_per_step.append(acc.item())
 			
 			if done:
 				state_t = self.env.reset()
@@ -244,7 +259,7 @@ class DQN_Agent():
 		#loss /= self.num_iterations
 		#acc /= self.num_iterations
 
-		return loss, acc
+		return loss_per_step, acc_per_step
 
 	def test(self, model_file=None, test_num_episodes=100):
 		# Evaluate the performance of your agent over 100 episodes, by calculating cummulative rewards for the 100 episodes.
@@ -261,7 +276,7 @@ class DQN_Agent():
 			done = False
 			while not done:
 				q_values = self.Q_net(np.expand_dims(state_t,axis=0))
-				action = self.epsilon_greedy_policy(q_values)
+				action = self.epsilon_greedy_policy(q_values.cpu().numpy())
 				state_t_1, reward, done, info = self.env.step(action)
 				cum_reward += reward
 				state_t = state_t_1.copy()
@@ -294,9 +309,8 @@ class DQN_Agent():
 			#pdb.set_trace()i
 			with torch.no_grad():
 				q_values = self.Q_net(np.expand_dims(state_t,axis=0))
-			action = self.epsilon_greedy_policy(q_values)
+			action = self.epsilon_greedy_policy(q_values.cpu().numpy())
 	#		print("action: {}".format(action))
-			#pdb.set_trace()
 			state_t_1,reward,done,info = self.env.step(action)
 			#if(done):
 			#	pdb.set_trace()
@@ -362,14 +376,16 @@ def main(args):
 #	gpu_ops = tf.GPUOptions(allow_growth=True)
 #	config = tf.ConfigProto(gpu_options=gpu_ops)
 #	sess = tf.Session(config=config)
-	num_episodes = 100
+	num_episodes = 20
 	# Setting this as the default tensorflow session. 
 #	keras.backend.tensorflow_backend.set_session(sess)
 
 	# You want to create an instance of the DQN_Agent class here, and then train / test it.
 	
 	agent = DQN_Agent(environment_name)
+	#pdb.set_trace()
 	if(torch.cuda.is_available()):
+		print("on_cuda")
 		agent.Q_net.cuda()
 	if (args.train):
 		train_loss = []
@@ -380,8 +396,9 @@ def main(args):
 
 			loss,acc = agent.train()
 			train_loss.extend(loss)
-			train_acc.extend(acc)
-
+			#train_acc.extend(acc)
+	plt.plot(train_loss)
+	plt.savefig("train_loss.png")
 
 if __name__ == '__main__':
 	main(sys.argv)

@@ -10,6 +10,7 @@ import copy
 import argparse
 from collections import deque
 import os
+import random
 import pdb
 
 class QNetwork(tf.keras.Model):
@@ -84,7 +85,7 @@ class Replay_Memory():
 	def sample_batch(self, batch_size=32):
 		# This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples. 
 		# You will feed this to your model to train.
-		sampled_transitions_ids = random.sample(range(0,len(deque)),batch_size)
+		sampled_transitions_ids = random.sample(range(0,len(self.replay_deque)),batch_size)
 		sampled_transitions = [self.replay_deque[transition_id] for transition_id in sampled_transitions_ids]
 		return sampled_transitions
 
@@ -158,34 +159,41 @@ class DQN_Agent():
 		state_t = self.env.reset()
 		loss = []
 		acc = []
-		for iter in self.num_iterations:
-			q_values = self.Q_net.predict(state_t)
+		for iter in range(self.num_iterations):
+			pdb.set_trace()
+			## select action using an epsilon greedy policy
+			q_values = self.Q_net.model.predict(np.expand_dims(state_t,axis=0))
 			action = self.epsilon_greedy_policy(q_values)
-
-			state_t_1, reward, done, info = self.env.step(action)
-
-			self.replay_buffer.append(state_t,action,reward,state_t_1,done)
 			
-			sampled_transitions = self.replay_buffer.sampled_batch(batch_size=self.batch_size)
-			q_values_target = []*batch_size
+			## take a step in the env using the action
+			state_t_1, reward, done, info = self.env.step(action)
+			
+			## store the transition in the replay buffer
+			self.replay_buffer.append((state_t,action,reward,state_t_1,done))
+			
+			## sample a minibatch of random transitions from the replay buffer
+			sampled_transitions = self.replay_buffer.sample_batch(batch_size=self.batch_size)
+			
+				
+			q_values_target = []*self.batch_size
 
-			X_train = []*batch_size
+			X_train = []*self.batch_size
 
 			for transition_id, transition in enumerate(sampled_transitions):
 				r = transition[2]
 				s1 = transition[3]
 				d = transition[4]
-
+				pdb.set_trace()
 				if(transition[-1]):
 					q_values_target[transition_id] = r
 				else:
-					q_values_target[transition_id] = r + self.gamma * np.amax(self.Q_net_target.predict(s1))
+					q_values_target[transition_id] = r + self.gamma * np.amax(self.Q_net.model.predict(np.expand_dims(s1,axis=0)))[
 
 				X_train[transition_id] = s1.copy()
 
 			X_train = np.array(X_train)
 			Y_train = np.array(q_values_target)
-			history = self.Q_net.mode.fit(X_train,Y_train,epoch=5,verbose=1)
+			history = self.Q_net.model.fit(X_train,Y_train,epoch=5,verbose=1)
 			loss += history.history['loss'][-1]
 			acc += history.history['accuracy'][-1]
 
@@ -212,7 +220,7 @@ class DQN_Agent():
 			state_t = self.env.reset()
 			done = False
 			while not done:
-				q_values = self.Q_net.predict(state_t)
+				q_values = self.Q_net.model.predict(np.expand_dims(state_t,axis=0))
 				action = self.epsilon_greedy_policy(q_values)
 				state_t_1, reward, done, info = self.env.step(action)
 				cum_reward += reward
@@ -253,8 +261,8 @@ class DQN_Agent():
 			#	pdb.set_trace()
 			self.replay_buffer.append((state_t,action,reward,state_t_1,done))
 			transition_counter += 1
-			print(transition_counter)
-			print(done)
+		#	print(transition_counter)
+		#	print(done)
 			if(done):
 				state_t = self.env.reset()
 			else:

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import tensorflow as tf
 import keras
-from keras.models import Sequential
-from keras.layers import Dense
+from keras.models import Sequential, Model
+from keras.layers import Dense, Input
 import numpy as np
 import gym
 import sys
@@ -35,9 +35,19 @@ class QNetwork(tf.keras.Model):
 		self.model.add(Dense(self.action_space.n))
 		
 		self.model.compile(optimizer='adam',
-				loss=keras.losses.mean_squared_error,
+				loss=self.mse_loss,
 				metrics=['accuracy'])
+		
+		## functional api
+		#inputs = Input(shape=(self.input_dim,))
+		#hidden_1 = Dense(32,activation='relu')(inputs)
+		#hidden_2 = Dense(16,activation='relu')(hidden_1)
+		#outputs = Dense(self.action_space.n)(hidden_2)
 
+		#self.model_2 = Model(inputs=inputs,outputs=outputs)
+		#self.model_2.compile(optimizer='adam'
+		#			loss=keras.losses.mean_squared_error,
+		#			metrics=['accuracy'])	
 		pass
 
 	def save_model_weights(self, suffix):
@@ -59,6 +69,17 @@ class QNetwork(tf.keras.Model):
 		self.model.load_weights(model_file)
 		
 		pass
+	def custom_mse_loss(y_true,y_pred):
+	## y_true: actual q_value of the state, chosen action
+	## y_pred: q_values for all the functions for the corresponding state
+
+		y_out = y_pred[0,actions]
+		loss = keras.losses.mean_squared_loss(y_true,y_out) 
+	
+		return loss
+
+		
+
 
 
 class Replay_Memory():
@@ -175,24 +196,25 @@ class DQN_Agent():
 			sampled_transitions = self.replay_buffer.sample_batch(batch_size=self.batch_size)
 			
 				
-			q_values_target = []*self.batch_size
+			q_values_target = np.zeros((self.batch_size,self.action_space.n))
 
 			X_train = []*self.batch_size
 
 			for transition_id, transition in enumerate(sampled_transitions):
 				r = transition[2]
+				a = transition[1]
 				s1 = transition[3]
 				d = transition[4]
 				pdb.set_trace()
 				if(transition[-1]):
-					q_values_target[transition_id] = r
+					q_values_target[transition_id,a] = r
 				else:
-					q_values_target[transition_id] = r + self.gamma * np.amax(self.Q_net.model.predict(np.expand_dims(s1,axis=0)))[
+					q_values_target[transition_id,a] = r + self.gamma * np.amax(self.Q_net.model.predict(np.expand_dims(s1,axis=0)))
 
 				X_train[transition_id] = s1.copy()
 
 			X_train = np.array(X_train)
-			Y_train = np.array(q_values_target)
+			Y_train = q_values_target
 			history = self.Q_net.model.fit(X_train,Y_train,epoch=5,verbose=1)
 			loss += history.history['loss'][-1]
 			acc += history.history['accuracy'][-1]

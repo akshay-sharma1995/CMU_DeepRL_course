@@ -41,7 +41,6 @@ class QNetwork(nn.Module):
 		self.linear3 = nn.Linear(16,self.action_space.n)
 		
 	def forward(self,X):
-	#	pdb.set_trace()	
 		X = torch.tensor(X).to(device=self.device).float()
 		x_em = F.relu(self.linear1(X))
 		x_em = F.relu(self.linear2(x_em))
@@ -72,16 +71,6 @@ class QNetwork(nn.Module):
 		self.model.load_state_dict(torch.load(weight_file))
 		
 		pass
-#	def custom_mse_loss(y_true,y_pred):
-#	## y_true: actual q_value of the state, chosen action
-#	## y_pred: q_values for all the functions for the corresponding state
-#
-#		y_out = y_pred[0,actions]
-#		loss = keras.losses.mean_squared_loss(y_true,y_out) 
-#	
-#		return loss
-#
-		
 
 
 
@@ -99,7 +88,6 @@ class Replay_Memory():
 		# Hint: you might find this useful:
 		# 		collections.deque(maxlen=memory_size)
 		
-		# self.replay_buffer = []*memory_size
 		
 		self.replay_deque = deque(maxlen=memory_size)
 		self.memory_size = memory_size
@@ -142,13 +130,12 @@ class DQN_Agent():
 		self.test_env = gym.make(self.environment_name)
 		self.obs_space = self.env.observation_space
 		self.action_space = self.env.action_space
-		#input_dim = self.env.observation_space.shape[0] + self.env.action_space.n
 		self.Q_net = QNetwork(self.environment_name,self.obs_space, self.action_space)
 		
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		if(torch.cuda.is_available()):
 			self.Q_net.cuda()
-		#keras.initializers.Initializer()
+		
 		self.optimizer = torch.optim.Adam(self.Q_net.parameters(),learning_rate)
 
 		self.replay_buffer = Replay_Memory()
@@ -157,24 +144,20 @@ class DQN_Agent():
 		self.batch_size = 32
 		pass 
 
-	def epsilon_greedy_policy(self, q_values):
+	def epsilon_greedy_policy(self, q_values,epsilon):
 		# Creating epsilon greedy probabilities to sample from. 
-		epsilon = 0.01
 		
 		go_greedy = np.random.choice(2,size=1,p=[epsilon,1-epsilon])[0]
-		#pdb.set_trace()
 		if(go_greedy):
 			action = np.argmax(q_values)
 		else:
 			action = np.random.randint(0,q_values.shape[1])
 		
-		#action = np.argmax(q_values,axis=1) if go_greedy else np.random.choice(q_values.shape[1],size=1)
 		return action
 
 	def greedy_policy(self, q_values):
 		# Creating greedy policy for test time. 
-		pdb.set_trace()	
-		action = np.argmax(q_values,axis=1)
+		action = np.argmax(q_values)
 		return action
 		pass 
 
@@ -185,24 +168,25 @@ class DQN_Agent():
 
 		# When use replay memory, you should interact with environment here, and store these 
 		# transitions to memory, while also updating your model.
-	
-		#pdb.set_trace()	
+		
 		state_t = self.env.reset()
 		loss_per_step = []
-		#acc_per_step = []
 		test_reward = []
-		self.Q_net = self.Q_net.train()
+		self.Q_net.train()
 		done = False
-		#pdb.set_trace()
+		step_num = 0
 		for ep in range(num_episodes):
 			#pdb.set_trace()
 			## select action using an epsilon greedy policy
-			step_num = 0
+			#epsilon = max((0.5 - 0.000045*ep),0.05)	
 			while not(done):
+				epsilon = max((0.5 - 0.000045*step_num),0.05)
+				if(summary_writer):
+					summary_writer.add_scalar("epsilon",epsilon,step_num)
 				with torch.no_grad():
 					q_values = self.Q_net(np.expand_dims(state_t,axis=0))
 				
-				action = self.epsilon_greedy_policy(q_values.cpu().numpy())
+				action = self.epsilon_greedy_policy(q_values.cpu().numpy(),epsilon)
 				
 				## take a step in the env using the action
 				state_t_1, reward, done, info = self.env.step(action)
@@ -212,41 +196,40 @@ class DQN_Agent():
 				
 				## sample a minibatch of random transitions from the replay buffer
 				sampled_transitions = self.replay_buffer.sample_batch(batch_size=self.batch_size)
-				
 					
-			#	q_values_target = [None]*self.batch_size
-				q_values_target = np.zeros((self.batch_size,self.action_space.n))
+				q_values_target = [None]*self.batch_size
+
 				q_pred_action_mask = np.zeros((self.batch_size,self.action_space.n))
-				#q_values_target = []
+
 				X_train = [None]*self.batch_size
-				#action_idxs = np.zeros((self.batch_size,),dtype=np.int64)
+	
 				for transition_id, transition in enumerate(sampled_transitions):
-					r = transition[2]
+					s = transition[0]
 					a = transition[1]
+					r = transition[2]
 					s1 = transition[3]
 					d = transition[4]
-					#pdb.set_trace()
-				#	action_idxs[transition_id] = a
+					
 					q_pred_action_mask[transition_id,a] = 1
 					if(d):
-						q_values_target[transition_id,a] = r
+						q_values_target[transition_id] = r
 					else:
 						with torch.no_grad():
-							q_values_target[transition_id,a] = r + self.gamma * torch.max(self.Q_net(np.expand_dims(s1,axis=0))).item()
+							q_values_target[transition_id] = r + self.gamma * torch.max(self.Q_net(np.expand_dims(s1,axis=0))).item()
 
-					X_train[transition_id] = s1.copy()
+					X_train[transition_id] = s.copy()
 
-				#pdb.set_trace()
 				X_train = np.array(X_train)
+				
 				Y_train = torch.tensor(q_values_target).float().to(device=self.device)
 				
-				self.Q_net = self.Q_net.train()
 				Y_pred_all_actions = self.Q_net(X_train)
-				Y_pred_all_actions = torch.mul(Y_pred_all_actions,torch.tensor(q_pred_action_mask).float().to(device=self.device))
-				#Y_pred = Y_pred_all_actions[:,action_idxs]
-			#	Y_pred = torch.tensor([Y_pred_all_actions[i,action_idxs[i]] for i in range(0,Y_pred_all_actions.shape[0])])
-				batch_loss = F.mse_loss(Y_pred_all_actions, Y_train)
 				
+				Y_pred_all_actions = torch.mul(Y_pred_all_actions,torch.tensor(q_pred_action_mask).float().to(device=self.device))
+				Y_pred = torch.sum(Y_pred_all_actions,dim=1)
+				batch_loss = F.mse_loss(Y_pred, Y_train)
+				
+
 				self.optimizer.zero_grad()
 				batch_loss.backward()
 				self.optimizer.step()
@@ -255,23 +238,19 @@ class DQN_Agent():
 				step_num += 1
 				if(summary_writer):
 					summary_writer.add_scalar("train_loss_per_step",loss_per_step[-1],len(loss_per_step))
-			#	print("Episode: {} | step:{} | train_loss:{}".format(ep,step_num,batch_loss.item()))
-				#acc_per_step.append(acc.item())
 				
 				if done:
 					state_t = self.env.reset()
 					
 				else:
 					state_t = state_t_1.copy()
-				
-		#loss /= self.num_iterations
-		#acc /= self.num_iterations
 			done = False
 			if(ep%test_after==0):
 				test_rew = self.test(test_num_episodes=eval_episodes)
 				test_reward.append(test_rew)
 				if(summary_writer):
 					summary_writer.add_scalar("test_cum_reward",test_reward[-1],len(test_reward))
+				print("Episode: {}".format(ep))
 				print("Test-----> Cum_reward: {}".format(test_rew))
 			
 		return loss_per_step, test_reward
@@ -284,20 +263,20 @@ class DQN_Agent():
 			self.Q_net.load_model_weights(model_file)
 		done = False
 		cum_reward = 0
-		self.Q_net.eval()
+	#	self.Q_net.eval()
 		for episode in range(test_num_episodes):
 			state_t = self.test_env.reset()
 			done = False
 			while not done:
 				with torch.no_grad():
 					q_values = self.Q_net(np.expand_dims(state_t,axis=0))
-				action = self.epsilon_greedy_policy(q_values.cpu().numpy())
+				action = self.greedy_policy(q_values.cpu().numpy())
 				state_t_1, reward, done, info = self.test_env.step(action)
 				cum_reward += reward
 				state_t = state_t_1.copy()
 
 		cum_reward /= test_num_episodes
-
+	#	self.Q_net.train()
 		return cum_reward
 		
 
@@ -305,44 +284,29 @@ class DQN_Agent():
 	def burn_in_memory(self,burn_in):
 		# Initialize your replay memory with a burn_in number of episodes / transitions. 
 		
-	#	pdb.set_trace()
 		state_t = self.env.reset()
 		done = False
 
 		transition_counter = 0
 		
-	#	X = np.random.normal(size=(1000,4))
-	#	Y = np.zeros((1000,2))
-	#	his = self.Q_net.model.fit(X,Y,epochs=10,batch_size=256,verbose=1)
-	#	loss = his.history['loss'][-1]
-	#	acc = his.history['accuracy'][-1]
-
-		#print("loss, acc: ",loss ,acc)
-		#pdb.set_trace()
 		print("burn_in_start")
 		while transition_counter<burn_in:
-			#pdb.set_trace()i
+			
 			with torch.no_grad():
 				q_values = self.Q_net(np.expand_dims(state_t,axis=0))
-			action = self.epsilon_greedy_policy(q_values.cpu().numpy())
-	#		print("action: {}".format(action))
+			action = self.greedy_policy(q_values.cpu().numpy())
+	#		
 			state_t_1,reward,done,info = self.env.step(action)
-			#if(done):
-			#	pdb.set_trace()
+
 			self.replay_buffer.append((state_t,action,reward,state_t_1,done))
 			transition_counter += 1
-		#	print(transition_counter)
-		#	print(done)
 			if(done):
 				state_t = self.env.reset()
+				done = False
 			else:
 				state_t = state_t_1.copy()
-		#	pdb.set_trace()
-			#state_t = state_t_1.copy()
-			if(transition_counter==burn_in):
-				
-				break
-	#	pdb.set_trace()
+
+
 		print("burn_in_over")
 		pass
 
@@ -392,18 +356,11 @@ def main(args):
 
 	args = parse_arguments()
 	environment_name = args.env
-
-#	#pdb.set_trace()
-	# Setting the session to allow growth, so it doesn't allocate all GPU memory. 
-#	gpu_ops = tf.GPUOptions(allow_growth=True)
-#	config = tf.ConfigProto(gpu_options=gpu_ops)
-#	sess = tf.Session(config=config)
+	
 	num_episodes = args.num_episodes
 	test_after = args.test_after
 	eval_episodes = args.eval_episodes
 	lr = args.lr
-	# Setting this as the default tensorflow session. 
-#	keras.backend.tensorflow_backend.set_session(sess)
 
 	# You want to create an instance of the DQN_Agent class here, and then train / test it.
 	
@@ -412,21 +369,14 @@ def main(args):
 		os.mkdir(log_path)
 	summary_writer = SummaryWriter(log_path)
 	agent = DQN_Agent(environment_name,lr)
-	#test_reward= []
-	#pdb.set_trace()
+	
 	if(torch.cuda.is_available()):
 		print("on_cuda")
 		agent.Q_net.cuda()
 	if (args.train):
-		#train_loss = []
-		#train_acc = []
-
-		#for episode in range(num_episodes):
-			#print("Starting episode: {}".format(episode))			
+		
 		train_loss, test_reward = agent.train(num_episodes,test_after,eval_episodes,summary_writer)
-		#test_reward.append(agent.test())
-		#train_loss.extend(loss)
-		#train_acc.extend(acc)
+		
 
 		fig1 = plt.figure()
 		plt.plot(train_loss)

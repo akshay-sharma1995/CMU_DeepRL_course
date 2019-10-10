@@ -12,6 +12,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pdb
 import os
+import math
 import seaborn as sns
 sns.set()
 
@@ -48,16 +49,14 @@ class Policy(nn.Module):
 class Reinforce(object):
 	# Implementation of the policy gradient method REINFORCE.
 
-	def __init__(self, model, lr):
+	def __init__(self, model, optimizer):
 
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 		self.model = model.to(device=self.device)
 		print("model shifted to {}".format(self.device))
 		self.model.train()
 
-		self.optimizer = torch.optim.Adam(self.model.parameters(),lr)
-
-
+		self.optimizer = optimizer
 
 		for param in self.model.parameters():
 			if(len(param.shape)>1):
@@ -190,7 +189,14 @@ def parse_arguments():
 	parser.add_argument('--env', dest='env', type=str,
 						default='LunarLander-v2', help="environment_name")
 
+	parser.add_argument("--checkpoint_file", dest="checkpoint_file", type=str, 
+						default=None, help="saved_checkpoint_file")
 
+	parser.add_argument("--save-data-flag", dest="save_data_flag", type=int,
+						default = 1, help="whether to save data or not")
+
+	parser.add_argument("--save-checkpoint-flag", dest="save_checkpoint_flag", type=int,
+						default = 1, help="whether to save checkpoint or not")
 
 	# https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
 	parser_group = parser.add_mutually_exclusive_group(required=False)
@@ -213,20 +219,23 @@ def main(args):
 	gamma = args.gamma
 	render = args.render
 	env_name = args.env
+	save_checkpoint_flag = args.save_checkpoint_flag
+	save_data_flag = args.save_data_flag
+	checkpoint_file = args.checkpoint_file
 
+	
 	# create dir to store plots
 	env_path = os.path.join(os.getcwd(),"env_{}".format(env_name))
-	model_path = os.path.join(env_path,"num_ep_{}_lr_{}_gamma_{}".format(num_episodes,lr,gamma))
-	plots_path = os.path.join(model_path,"plots")
-	data_path = os.path.join(model_path,"data")
-
+	curr_run_path = os.path.join(env_path,"num_ep_{}_lr_{}_gamma_{}".format(num_episodes,lr,gamma))
+	plots_path = os.path.join(curr_run_path,"plots")
+	data_path = os.path.join(curr_run_path,"data")
+	
 
 	if not os.path.isdir(env_path):
 	    os.mkdir(env_path)
 
-
-	if not os.path.isdir(model_path):
-	    os.mkdir(model_path)
+	if not os.path.isdir(curr_run_path):
+	    os.mkdir(curr_run_path)
 
 	if not os.path.isdir(plots_path):
 	    os.mkdir(plots_path)
@@ -244,13 +253,23 @@ def main(args):
 
 	# TODO: Create the model.
 	policy = Policy(nbActions, input_dim)
+	optimizer = torch.optim.Adam(policy.parameters(),lr)
+	
+	if(checkpoint_file):
+		checkpoint = torch.load(os.path.join(curr_run_path,checkpoint_file))
+		policy.load_state_dict(checkpoint['model_state_dict'])
+		optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+		print("checkpoint_loaded: {}".format(checkpoint_file))
+	
+		
 	train_loss_arr = []
 	mean_test_reward_arr = []
 	test_reward_std_arr = []
-
-
+	
+	best_test_reward = float('-inf')	
+	
 	# TODO: Train the model using REINFORCE and plot the learning curve.
-	algo = Reinforce(policy,lr)
+	algo = Reinforce(policy,optimizer)
 
 	for ep in range(num_episodes):
 		train_loss = algo.train(env,gamma)
@@ -261,11 +280,23 @@ def main(args):
 			mean_test_reward, test_reward_std = algo.test(env)
 			mean_test_reward_arr.append(mean_test_reward)
 			test_reward_std_arr.append(test_reward_std)
-
-
-	np.save(os.path.join(data_path,"train_loss.npy"),np.array(train_loss_arr))
-	np.save(os.path.join(data_path,"mean_test_reward.npy"),np.array(mean_test_reward_arr))
-	np.save(os.path.join(data_path,"std_test_reward.npy"),np.array(test_reward_std_arr))
+			if(best_test_reward<=mean_test_reward):
+				best_test_reward = mean_test_reward * 1.0
+			
+		# saving_checkpoint
+		if((ep+1)%1000==0 and save_checkpoint_flag):
+			torch.save({'model_state_dict': policy.state_dict(),
+					'optimizer_state_dict': optimizer.state_dict(),
+					'num_episodes_trained': ep},
+					os.path.join(curr_run_path,"checkpoint.pth"))
+			print("checkpoint_saved")
+			
+		if((ep+1)%1000==0 and save_data_flag):
+			np.save(os.path.join(data_path,"train_loss.npy"),np.array(train_loss_arr))
+			np.save(os.path.join(data_path,"mean_test_reward.npy"),np.array(mean_test_reward_arr))
+			np.save(os.path.join(data_path,"std_test_reward.npy"),np.array(test_reward_std_arr))
+			
+			print("data_saved")
 
 	fig = plt.figure(figsize=(16, 9))
 	plt.plot(train_loss_arr)

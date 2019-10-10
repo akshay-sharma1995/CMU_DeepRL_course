@@ -52,18 +52,11 @@ class Reinforce(object):
 	def __init__(self, model, optimizer):
 
 		self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-		self.model = model.to(device=self.device)
-		print("model shifted to {}".format(self.device))
+		# self.model = model.to(device=self.device)
+		self.model = model
 		self.model.train()
 
 		self.optimizer = optimizer
-
-		for param in self.model.parameters():
-			if(len(param.shape)>1):
-				alpha = np.sqrt(3.0*1.0 / ((param.shape[0] + param.shape[1])*0.5))
-				nn.init.uniform_(param,-alpha, alpha)
-			else:
-				nn.init.constant_(param, 0.0)
 
 		# TODO: Define any training operations and optimizers here, initialize
 		#       your variables, or alternately compile your model here.
@@ -189,7 +182,7 @@ def parse_arguments():
 	parser.add_argument('--env', dest='env', type=str,
 						default='LunarLander-v2', help="environment_name")
 
-	parser.add_argument("--checkpoint_file", dest="checkpoint_file", type=str, 
+	parser.add_argument("--checkpoint-file", dest="checkpoint_file", type=str, 
 						default=None, help="saved_checkpoint_file")
 
 	parser.add_argument("--save-data-flag", dest="save_data_flag", type=int,
@@ -232,16 +225,16 @@ def main(args):
 	
 
 	if not os.path.isdir(env_path):
-	    os.mkdir(env_path)
+		os.mkdir(env_path)
 
 	if not os.path.isdir(curr_run_path):
-	    os.mkdir(curr_run_path)
+		os.mkdir(curr_run_path)
 
 	if not os.path.isdir(plots_path):
-	    os.mkdir(plots_path)
+		os.mkdir(plots_path)
 
 	if not os.path.isdir(data_path):
-	    os.mkdir(data_path)
+		os.mkdir(data_path)
 
 
 	# Create the environment.
@@ -253,12 +246,26 @@ def main(args):
 
 	# TODO: Create the model.
 	policy = Policy(nbActions, input_dim)
+	if(torch.cuda.is_available()):
+		policy.cuda()
+		print("model shifted to cuda")
+
+	for param in policy.parameters():
+		if(len(param.shape)>1):
+			alpha = np.sqrt(3.0*1.0 / ((param.shape[0] + param.shape[1])*0.5))
+			nn.init.uniform_(param,-alpha, alpha)
+		else:
+			nn.init.constant_(param, 0.0)	
+
+
 	optimizer = torch.optim.Adam(policy.parameters(),lr)
 	
+	num_episodes_trained = 0
 	if(checkpoint_file):
 		checkpoint = torch.load(os.path.join(curr_run_path,checkpoint_file))
 		policy.load_state_dict(checkpoint['model_state_dict'])
 		optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+		num_episodes_trained = checkpoint["num_episodes_trained"]
 		print("checkpoint_loaded: {}".format(checkpoint_file))
 	
 		
@@ -271,7 +278,7 @@ def main(args):
 	# TODO: Train the model using REINFORCE and plot the learning curve.
 	algo = Reinforce(policy,optimizer)
 
-	for ep in range(num_episodes):
+	for ep in range(num_episodes_trained ,num_episodes):
 		train_loss = algo.train(env,gamma)
 		# print("episode: {}".format(ep))
 		train_loss_arr.append(train_loss)

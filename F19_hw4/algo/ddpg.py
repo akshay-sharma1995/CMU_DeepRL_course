@@ -10,7 +10,7 @@ import matplotlib as mpl
 mpl.use('Agg')
 BUFFER_SIZE = 1000000
 BATCH_SIZE = 1024
-GAMMA = 0.98                    # Discount for rewards.
+GAMMA = 0.99                    # Discount for rewards.
 TAU = 0.05                      # Target network update rate.
 LEARNING_RATE_ACTOR = 0.0001
 LEARNING_RATE_CRITIC = 0.001
@@ -183,7 +183,7 @@ class DDPG(object):
                 self.critic_target.train()
                 epsilon = 1.0
                 for i in range(num_episodes):
-                        epsilon = max((1.0 - 0.9*i/15000),0.1)
+                        epsilon = max((1.0 - 0.9*i/30000),0.1)
                         state = self.env.reset()
                         total_reward = 0.0
                         done = False
@@ -207,24 +207,66 @@ class DDPG(object):
                                 self.replay_buff.add(state, action, reward, next_state, done)
                                 state = next_state
 
+                                if hindsight == False:
+                                    # print("***********************starting_ddpg_training*************************** ")
+                                    if(self.replay_buff.count() >= 2*BATCH_SIZE):
+                                            Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
+                                            s = torch.from_numpy(np.stack(Batch[:,0]))
+                                            a = torch.from_numpy(np.stack(Batch[:,1]))
+                                            r = torch.tensor(np.stack(Batch[:,2]),dtype=torch.float32).to(device=self.device)
+                                            ns = torch.from_numpy(np.stack(Batch[:,3]))
+                                            d = torch.tensor(np.stack(Batch[:,4]),dtype=torch.float32).to(device=self.device)
+                                            Q_pred = self.critic(s,a)
+                                            with torch.no_grad():
+                                                    na = self.actor_target(ns)
+                                                    Q_target = torch.unsqueeze(r,dim=1) +  GAMMA * self.critic_target(ns,na) * torch.unsqueeze(1.0-d, dim=1)
+                                        
+                                            val_loss = self.critic.mse_loss(Q_pred,Q_target)
+                                            self.critic.optimizer.zero_grad()
+                                            val_loss.backward()
+                                            self.critic.optimizer.step()
+                                            critic_loss.append(val_loss.item())
+                                            loss += torch.abs(Q_pred - Q_target).mean().item()
+                                            
+                                            self.critic.optimizer.zero_grad()
+                                            self.actor.optimizer.zero_grad()
+                                            policy_loss = -self.critic(s,self.actor(s)).mean()
+
+                                            policy_loss.backward()
+                                            self.actor.optimizer.step()
+
+
+                                            self.copyWeights(self.actor_target,self.actor)
+                                            self.copyWeights(self.critic_target,self.critic)
+
+
+
+                        if hindsight:
+                                # For HER, we also want to save the final next_state.
+                                
+                                new_s = state
+                                store_states.append(new_s)
+                                self.add_hindsight_replay_experience(store_states, store_actions)
                                 if(self.replay_buff.count() >= 2*BATCH_SIZE):
+                                        # print("------------------------------starting_HER_training----------------------------s")
+
                                         Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
                                         s = torch.from_numpy(np.stack(Batch[:,0]))
                                         a = torch.from_numpy(np.stack(Batch[:,1]))
                                         r = torch.tensor(np.stack(Batch[:,2]),dtype=torch.float32).to(device=self.device)
                                         ns = torch.from_numpy(np.stack(Batch[:,3]))
-
+                                        d = torch.tensor(np.stack(Batch[:,4]),dtype=torch.float32).to(device=self.device)
                                         Q_pred = self.critic(s,a)
                                         with torch.no_grad():
                                                 na = self.actor_target(ns)
-                                                Q_target = torch.unsqueeze(r,dim=1) +  GAMMA * self.critic_target(ns,na)
-
+                                                Q_target = torch.unsqueeze(r,dim=1) +  GAMMA * self.critic_target(ns,na) * torch.unsqueeze(1.0-d, dim=1)
+                                    
                                         val_loss = self.critic.mse_loss(Q_pred,Q_target)
                                         self.critic.optimizer.zero_grad()
                                         val_loss.backward()
                                         self.critic.optimizer.step()
                                         critic_loss.append(val_loss.item())
-                                        loss += np.sqrt(val_loss.item())
+                                        loss += torch.abs(Q_pred - Q_target).mean().item()
                                         
                                         self.critic.optimizer.zero_grad()
                                         self.actor.optimizer.zero_grad()
@@ -239,11 +281,7 @@ class DDPG(object):
 
 
 
-                        if hindsight:
-                                # For HER, we also want to save the final next_state.
-                                store_states.append(new_s)
-                                self.add_hindsight_replay_experience(store_states,
-                                                                                                         store_actions)
+
                         del store_states, store_actions
                         store_states, store_actions = [], []
 
@@ -272,16 +310,29 @@ class DDPG(object):
                         states: a list of states.
                         actions: a list of states.
                 """
-                raise NotImplementedError
+                for num_state in range(len(states)-1):
+                    num_new_goals = 4
+                    new_goal_idxs = np.random.randint(low=num_state, high=len(states)-1, size=num_new_goals)
+                    for num_goal,new_goal_id in enumerate(new_goal_idxs): # number of goals
+                        new_goal = states[new_goal_id][2:4]
+                        s = states[num_state]
+                        s[-2:] = new_goal.copy()
+                        r = self.env._HER_calc_reward(s)
+                        ns = states[num_state+1]
+                        ns[-2:] = new_goal.copy()
+                        done = False
+                        if(np.linalg.norm(np.array(ns[2:4] - new_goal) < 0.7)):
+                            done = True
+                        self.replay_buff.add(s, actions[num_state], r, ns, done)
 
         def plot_rewards(self,mean_arr,std_arr):
                 mean = np.array(mean_arr)
                 std = np.array(std_arr)
                 fig = plt.figure(figsize=(16, 9))
                 x =     np.arange(0,mean.shape[0])
-                plt.plot(x,mean, label="mean_test_reward",color='orangered')
+                plt.plot(x,mean, label="mean_cummulative_test_reward",color='orangered')
                 plt.fill_between(x,mean-std, mean+std,facecolor='peachpuff',alpha=0.5)
-                plt.xlabel("num episodes X {}".format(100))
+                plt.xlabel("num episodes / {}".format(100))
                 plt.ylabel("test_reward")
                 plt.legend()
                 plt.savefig(os.path.join(self.plots_path,"test_rewards.png"))

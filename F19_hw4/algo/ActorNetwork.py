@@ -7,7 +7,7 @@ import numpy as np
 import pdb
 
 HIDDEN1_UNITS = 400
-HIDDEN2_UNITS = 400
+HIDDEN2_UNITS = 300
 
 def create_actor_network(state_size, action_size, batch_size, tau, learning_rate):
 	"""Creates an actor network.
@@ -53,13 +53,13 @@ class ActorNetwork(nn.Module):
 		self.optimizer = torch.optim.Adam(self.parameters(),lr=learning_rate)
 
 	def initialize_params(self):
-		for param in self.parameters():
-			if(len(param.shape)>1):
-				# pdb.set_trace()
-				init_w = np.sqrt(6.0 / (param.shape[0]+param.shape[1]))
-				nn.init.uniform_(param,-init_w,init_w)
-			else:
-				nn.init.constant_(param,0.0)
+                model_len = len(self.actor)
+                for i,param in enumerate(self.parameters()):
+                    if(i==model_len-2):
+                        init_w = 3e-3
+                    else:
+                        init_w = np.sqrt(1.0 / param.shape[0])
+                    nn.init.uniform_(param,-init_w,init_w)
 
 	def forward(self,X):
 		

@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 import argparse
 import torch
 import time
+import pdb
 def parse_arguments():
 # Command-line flags are defined here.
         parser = argparse.ArgumentParser()
@@ -26,6 +27,8 @@ def parse_arguments():
                                                 default = "", help="any special comment for the model name")
         parser.add_argument("--try-gpu", dest="try_gpu", type=int,
                                                 default = 1, help="try to look for gpu")
+        parser.add_argument("--HER", dest="HER", type=int,
+                                                default = 1, help="try to look for gpu")
 
         return parser.parse_args()
 
@@ -43,8 +46,15 @@ def main():
         lr_c = args.lr_c
         env_name = args.env
         add_comment = args.add_comment
+        # pdb.set_trace()
+        hindsight = bool(args.HER)
         results_dir = os.path.join(os.getcwd(),"results")
-        algo_path = os.path.join(results_dir,"ddpg")
+        if(hindsight):
+            algo_path = os.path.join(results_dir,"her")
+        else:
+            algo_path = os.path.join(results_dir,"ddpg")
+
+
         env_path = os.path.join(algo_path,env_name)
         curr_run_path = os.path.join(env_path,"num_ep_{}_lra_{}_lrc_{}_sigma_{}{}".format(num_episodes,lr_a,lr_c,sigma,add_comment))
         data_path = os.path.join(curr_run_path,"data")
@@ -56,7 +66,7 @@ def main():
         algo = DDPG(env,lr_a,lr_c,sigma,data_path,plots_path,outfile,device=DEVICE)
         
         start_time = time.time()
-        algo.train(num_episodes,hindsight=False)
+        algo.train(num_episodes,hindsight=hindsight)
         end_time = time.time()
         time_elasped = end_time - start_time
         print("Time_taken_for_{}_episodes_on_{}: {:.0f} min {:.2f} sec".format(num_episodes, 

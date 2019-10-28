@@ -189,7 +189,7 @@ class DDPG(object):
                 self.critic_target.train()
                 epsilon = 1.0
                 for i in range(num_episodes):
-                        epsilon = max((1.0 - 0.9*i/20000),0.1)
+                        epsilon = max((0.5 - 0.45*i/20000),0.05)
                         state = self.env.reset()
                         total_reward = 0.0
                         done = False
@@ -329,19 +329,20 @@ class DDPG(object):
                 new_goal = states[-1][2:4]
                 num_dones = 0
                 for state_id in range(len(states)-1):
-                    num_dones = 0
-                    s = states[state_id]
-                    a = actions[state_id]
                     ns = states[state_id+1]
-                    s[-2:] = new_goal.copy()
-                    r = self.env._HER_calc_reward(s)
-                    ns[-2:] = new_goal.copy()
-                    done = False
-                    if(np.linalg.norm(np.array(ns[2:4] - new_goal) < 0.7)):
-                        done = True
-                        num_dones += 1
-                    self.replay_buff.add(s, a, r, ns, done)
-                    print("dones: {}".format(num_dones))
+                    if np.sum(abs(new_goal-ns[2:4])) != 0:
+                        num_dones = 0
+                        s = states[state_id]
+                        a = actions[state_id]
+                        s[-2:] = new_goal.copy()
+                        r = self.env._HER_calc_reward(s)
+                        ns[-2:] = new_goal.copy()
+                        done = False
+                        if(np.linalg.norm(np.array(ns[2:4] - new_goal) < 0.7)):
+                            done = True
+                            num_dones += 1
+                        self.replay_buff.add(s, a, r, ns, done)
+                        print("dones: {}".format(num_dones))
 
                 # for num_state in range(len(states)-1):
                 #     num_new_goals = 4

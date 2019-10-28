@@ -68,4 +68,3 @@ class ActorNetwork(nn.Module):
 
 
 		return mu
-

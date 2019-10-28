@@ -43,7 +43,7 @@ class EpsilonNormalActionNoise(object):
                         noisy_action: a batched tensor storing the action.
                 """
                 if np.random.uniform() > self.epsilon:
-                        return np.clip(action + np.random.normal(self.mu, self.sigma),-1.0,1.0)
+                        return action + np.random.normal(self.mu, self.sigma)
                 else:
                         return np.random.uniform(-1.0, 1.0, size=action.shape)
 
@@ -115,9 +115,10 @@ class DDPG(object):
                 test_rewards = []
                 success_vec = []
 
+                self.actor.eval()
+                self.critic.eval()
 
-
-                plt.figure(figsize=(12, 12))
+                fig = plt.figure(figsize=(12, 12))
                 for i in range(num_episodes):
                         s_vec = []
                         state = self.env.reset()
@@ -157,8 +158,11 @@ class DDPG(object):
                                         plt.legend(loc='lower left', fontsize=28, ncol=3, bbox_to_anchor=(0.1, 1.0))
                                 if i == 8:
                                         plt.savefig(os.path.join(self.plots_path,"res.png"))
+                                        plt.close()
                                         # plt.show()
                                         pass
+                self.actor.train()
+                self.critic.train()
                 return np.mean(success_vec), np.mean(test_rewards), np.std(test_rewards)
 
         def copyWeights(self,target_network,network):
@@ -173,7 +177,9 @@ class DDPG(object):
                         num_episodes: (int) Number of training episodes.
                         hindsight: (bool) Whether to use HER.
                 """
-                critic_loss = []
+                critic_loss_arr = []
+                td_error_arr = []
+                actor_loss_arr  = []
                 mean_test_rewards_arr = []
                 std_test_rewards_arr = []
                 #epsilon = 0.1
@@ -183,73 +189,35 @@ class DDPG(object):
                 self.critic_target.train()
                 epsilon = 1.0
                 for i in range(num_episodes):
-                        epsilon = max((1.0 - 0.9*i/30000),0.1)
+                        epsilon = max((1.0 - 0.9*i/20000),0.1)
                         state = self.env.reset()
                         total_reward = 0.0
                         done = False
                         step = 0
                         loss = 0
+                        actor_loss = 0
+                        critic_loss = 0
                         store_states = []
                         store_actions = []
                         while not done:
-                                step += 1
-                                # Collect one episode of experience, saving the states and actions
-                                # to store_states and store_actions, respectively.
-                                with torch.no_grad():
-                                        action_mu = self.actor(torch.from_numpy(state))
+                            step += 1
+                            # Collect one episode of experience, saving the states and actions
+                            # to store_states and store_actions, respectively.
+                            with torch.no_grad():
+                                    action_mu = self.actor(torch.from_numpy(state))
 
-                                AddNoise = EpsilonNormalActionNoise(0, self.sigma, epsilon)
-                                action = AddNoise(action_mu.cpu().numpy())
-                                store_actions.append(action)
-                                store_states.append(state)
-                                next_state , reward, done, info = self.env.step(action)
-                                total_reward = total_reward + reward
-                                self.replay_buff.add(state, action, reward, next_state, done)
-                                state = next_state
+                            AddNoise = EpsilonNormalActionNoise(0, self.sigma, epsilon)
+                            action = AddNoise(action_mu.cpu().numpy())
+                            store_actions.append(action)
+                            store_states.append(state)
+                            next_state , reward, done, info = self.env.step(action)
+                            total_reward = total_reward + reward
+                            self.replay_buff.add(state, action, reward, next_state, done)
+                            state = next_state
 
-                                if hindsight == False:
-                                    # print("***********************starting_ddpg_training*************************** ")
-                                    if(self.replay_buff.count() >= 2*BATCH_SIZE):
-                                            Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
-                                            s = torch.from_numpy(np.stack(Batch[:,0]))
-                                            a = torch.from_numpy(np.stack(Batch[:,1]))
-                                            r = torch.tensor(np.stack(Batch[:,2]),dtype=torch.float32).to(device=self.device)
-                                            ns = torch.from_numpy(np.stack(Batch[:,3]))
-                                            d = torch.tensor(np.stack(Batch[:,4]),dtype=torch.float32).to(device=self.device)
-                                            Q_pred = self.critic(s,a)
-                                            with torch.no_grad():
-                                                    na = self.actor_target(ns)
-                                                    Q_target = torch.unsqueeze(r,dim=1) +  GAMMA * self.critic_target(ns,na) * torch.unsqueeze(1.0-d, dim=1)
-                                        
-                                            val_loss = self.critic.mse_loss(Q_pred,Q_target)
-                                            self.critic.optimizer.zero_grad()
-                                            val_loss.backward()
-                                            self.critic.optimizer.step()
-                                            critic_loss.append(val_loss.item())
-                                            loss += torch.abs(Q_pred - Q_target).mean().item()
-                                            
-                                            self.critic.optimizer.zero_grad()
-                                            self.actor.optimizer.zero_grad()
-                                            policy_loss = -self.critic(s,self.actor(s)).mean()
-
-                                            policy_loss.backward()
-                                            self.actor.optimizer.step()
-
-
-                                            self.copyWeights(self.actor_target,self.actor)
-                                            self.copyWeights(self.critic_target,self.critic)
-
-
-
-                        if hindsight:
-                                # For HER, we also want to save the final next_state.
-                                
-                                new_s = state
-                                store_states.append(new_s)
-                                self.add_hindsight_replay_experience(store_states, store_actions)
+                            if hindsight == False:
+                                # print("***********************starting_ddpg_training*************************** ")
                                 if(self.replay_buff.count() >= 2*BATCH_SIZE):
-                                        # print("------------------------------starting_HER_training----------------------------s")
-
                                         Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
                                         s = torch.from_numpy(np.stack(Batch[:,0]))
                                         a = torch.from_numpy(np.stack(Batch[:,1]))
@@ -265,26 +233,73 @@ class DDPG(object):
                                         self.critic.optimizer.zero_grad()
                                         val_loss.backward()
                                         self.critic.optimizer.step()
-                                        critic_loss.append(val_loss.item())
+                                        critic_loss += val_loss.item()
                                         loss += torch.abs(Q_pred - Q_target).mean().item()
                                         
                                         self.critic.optimizer.zero_grad()
                                         self.actor.optimizer.zero_grad()
                                         policy_loss = -self.critic(s,self.actor(s)).mean()
-
+                                        
                                         policy_loss.backward()
                                         self.actor.optimizer.step()
-
+                                        actor_loss += policy_loss.item()
 
                                         self.copyWeights(self.actor_target,self.actor)
                                         self.copyWeights(self.critic_target,self.critic)
 
 
 
+                        if hindsight:
+                                # For HER, we also want to save the final next_state.
+                                
+                                new_s = state
+                                store_states.append(new_s)
+                                # pdb.set_trace()
+
+                                self.add_hindsight_replay_experience(store_states, store_actions)
+                                # pdb.set_trace()
+                                for _ in range(len(store_states)-1):                               
+                                    if(self.replay_buff.count() >= 2*BATCH_SIZE):
+                                            # print("------------------------------starting_HER_training----------------------------s")
+
+                                            Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
+                                            s = torch.from_numpy(np.stack(Batch[:,0]))
+                                            a = torch.from_numpy(np.stack(Batch[:,1]))
+                                            r = torch.tensor(np.stack(Batch[:,2]),dtype=torch.float32).to(device=self.device)
+                                            ns = torch.from_numpy(np.stack(Batch[:,3]))
+                                            d = torch.tensor(np.stack(Batch[:,4]),dtype=torch.float32).to(device=self.device)
+                                            Q_pred = self.critic(s,a)
+                                            with torch.no_grad():
+                                                    na = self.actor_target(ns)
+                                                    Q_target = torch.unsqueeze(r,dim=1) +  GAMMA * self.critic_target(ns,na) * torch.unsqueeze(1.0-d, dim=1)
+                                        
+                                            val_loss = self.critic.mse_loss(Q_pred,Q_target)
+                                            self.critic.optimizer.zero_grad()
+                                            val_loss.backward()
+                                            self.critic.optimizer.step()
+                                            critic_loss += val_loss.item()
+                                            loss += torch.abs(Q_pred - Q_target).mean().item()
+                                            
+                                            self.critic.optimizer.zero_grad()
+                                            self.actor.optimizer.zero_grad()
+                                            policy_loss = -self.critic(s,self.actor(s)).mean()
+
+                                            policy_loss.backward()
+                                            self.actor.optimizer.step()
+
+                                            actor_loss += policy_loss.item()
+
+                                            self.copyWeights(self.actor_target,self.actor)
+                                            self.copyWeights(self.critic_target,self.critic)
+
+
+
 
                         del store_states, store_actions
                         store_states, store_actions = [], []
-
+                        td_error_arr.append(loss/step)
+                        actor_loss_arr.append(actor_loss/step)
+                        #critic_loss_arr.append(critic_loss/step)
                         # Logging
                         print("Episode %d: Total reward = %d" % (i, total_reward))
                         print("\tTD loss = %.2f" % (loss / step,))
@@ -295,8 +310,9 @@ class DDPG(object):
                                 std_test_rewards_arr.append(std)
 
                                 np.save(os.path.join(self.data_path,"mean_test_reward.npy"),np.array(mean_test_rewards_arr))
-                                np.save(os.path.join(self.data_path,"std_test_reward.npy"),np.array(std_test_rewards_arr))
-                                
+                                np.save(os.path.join(self.data_path,"std_test_reward.npy"),np.array(std_test_rewards_arr)) 
+                                np.save(os.path.join(self.data_path,"actor_loss.npy"),np.array(actor_loss_arr))
+                                np.save(os.path.join(self.data_path,"td_error.npy"),np.array(td_error_arr))
                                 print('Evaluation: success = %.2f; return = %.2f' % (successes, mean_rewards))
                                 with open(self.outfile, "a") as f:
                                         f.write("%.2f, %.2f,\n" % (successes, mean_rewards))
@@ -310,20 +326,44 @@ class DDPG(object):
                         states: a list of states.
                         actions: a list of states.
                 """
-                for num_state in range(len(states)-1):
-                    num_new_goals = 4
-                    new_goal_idxs = np.random.randint(low=num_state, high=len(states)-1, size=num_new_goals)
-                    for num_goal,new_goal_id in enumerate(new_goal_idxs): # number of goals
-                        new_goal = states[new_goal_id][2:4]
-                        s = states[num_state]
-                        s[-2:] = new_goal.copy()
-                        r = self.env._HER_calc_reward(s)
-                        ns = states[num_state+1]
-                        ns[-2:] = new_goal.copy()
-                        done = False
-                        if(np.linalg.norm(np.array(ns[2:4] - new_goal) < 0.7)):
-                            done = True
-                        self.replay_buff.add(s, actions[num_state], r, ns, done)
+                new_goal = states[-1][2:4]
+                num_dones = 0
+                for state_id in range(len(states)-1):
+                    num_dones = 0
+                    s = states[state_id]
+                    a = actions[state_id]
+                    ns = states[state_id+1]
+                    s[-2:] = new_goal.copy()
+                    r = self.env._HER_calc_reward(s)
+                    ns[-2:] = new_goal.copy()
+                    done = False
+                    if(np.linalg.norm(np.array(ns[2:4] - new_goal) < 0.7)):
+                        done = True
+                        num_dones += 1
+                    self.replay_buff.add(s, a, r, ns, done)
+                    print("dones: {}".format(num_dones))
+
+                # for num_state in range(len(states)-1):
+                #     num_new_goals = 4
+                #     # selecting num_new_goals number of new goals from the future puck positions of the episode
+                #     # new_goal_idxs = np.random.randint(low=num_state, high=len(states), size=num_new_goals)
+
+                #     # num_dones = 0
+                #     for num_goal,new_goal_id in enumerate(new_goal_idxs): # number of goals
+                #         new_goal = states[new_goal_id][2:4]
+                #         s = states[num_state]
+                #         a = actions[num_state]
+                #         s[-2:] = new_goal.copy()
+                #         r = self.env._HER_calc_reward(s)
+                #         ns = states[num_state+1]
+                #         ns[-2:] = new_goal.copy()
+                #         done = False
+                #         if(np.linalg.norm(np.array(ns[2:4] - new_goal) < 0.7)):
+                #             done = True
+                #             num_dones += 1
+                #         self.replay_buff.add(s, a, r, ns, done)
+                #     print("dones: {}".format(num_dones))
+
 
         def plot_rewards(self,mean_arr,std_arr):
                 mean = np.array(mean_arr)
@@ -336,4 +376,4 @@ class DDPG(object):
                 plt.ylabel("test_reward")
                 plt.legend()
                 plt.savefig(os.path.join(self.plots_path,"test_rewards.png"))
-        
+                plt.close() 

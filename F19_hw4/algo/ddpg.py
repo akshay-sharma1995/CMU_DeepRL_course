@@ -208,12 +208,12 @@ class DDPG(object):
 
                             AddNoise = EpsilonNormalActionNoise(0, self.sigma, epsilon)
                             action = AddNoise(action_mu.cpu().numpy())
-                            store_actions.append(action)
-                            store_states.append(state)
+                            store_actions.append(action*1.0)
+                            store_states.append(state*1.0)
                             next_state , reward, done, info = self.env.step(action)
                             total_reward = total_reward + reward
                             self.replay_buff.add(state, action, reward, next_state, done)
-                            state = next_state
+                            state = next_state.copy()
 
                             if hindsight == False:
                                 # print("***********************starting_ddpg_training*************************** ")
@@ -252,14 +252,14 @@ class DDPG(object):
                         if hindsight:
                                 # For HER, we also want to save the final next_state.
                                 
-                                new_s = state
+                                new_s = state.copy()
                                 store_states.append(new_s)
                                 # pdb.set_trace()
 
                                 self.add_hindsight_replay_experience(store_states, store_actions)
                                 # pdb.set_trace()
                                 for _ in range(len(store_states)-1):                               
-                                    if(self.replay_buff.count() >= 2*BATCH_SIZE):
+                                    if(self.replay_buff.count() >= 3*BATCH_SIZE):
                                             # print("------------------------------starting_HER_training----------------------------s")
 
                                             Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
@@ -326,14 +326,14 @@ class DDPG(object):
                         states: a list of states.
                         actions: a list of states.
                 """
-                new_goal = states[-1][2:4]
+                new_goal = states[-1][2:4].copy()
                 num_dones = 0
                 for state_id in range(len(states)-1):
-                    ns = states[state_id+1]
+                    ns = states[state_id+1].copy()
                     if np.sum(abs(new_goal-ns[2:4])) != 0:
                         num_dones = 0
-                        s = states[state_id]
-                        a = actions[state_id]
+                        s = states[state_id].copy()
+                        a = actions[state_id].copy()
                         s[-2:] = new_goal.copy()
                         r = self.env._HER_calc_reward(s)
                         ns[-2:] = new_goal.copy()
@@ -342,7 +342,7 @@ class DDPG(object):
                             done = True
                             num_dones += 1
                         self.replay_buff.add(s, a, r, ns, done)
-                        print("dones: {}".format(num_dones))
+                       # print("dones: {}".format(num_dones))
 
                 # for num_state in range(len(states)-1):
                 #     num_new_goals = 4
@@ -370,7 +370,7 @@ class DDPG(object):
                 mean = np.array(mean_arr)
                 std = np.array(std_arr)
                 fig = plt.figure(figsize=(16, 9))
-                x =     np.arange(0,mean.shape[0])
+                x = np.arange(0,mean.shape[0])
                 plt.plot(x,mean, label="mean_cummulative_test_reward",color='orangered')
                 plt.fill_between(x,mean-std, mean+std,facecolor='peachpuff',alpha=0.5)
                 plt.xlabel("num episodes / {}".format(100))

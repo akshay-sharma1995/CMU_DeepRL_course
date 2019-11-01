@@ -310,7 +310,6 @@ class DDPG(object):
                         store_states, store_actions = [], []
                         td_error_arr.append(loss/step)
                         actor_loss_arr.append(actor_loss/step)
-                        #critic_loss_arr.append(critic_loss/step)
                         # Logging
                         print("Episode %d: Total reward = %d" % (i, total_reward))
                         print("\tTD loss = %.2f" % (loss / step,))
@@ -415,6 +414,7 @@ class DDPG(object):
                 plt.ylabel("test_reward")
                 plt.legend()
                 plt.savefig(os.path.join(self.plots_path,"test_rewards.png"))
+                plt.clf()
                 plt.close()
 
         def plot_prop(self,prop,prop_name):
@@ -424,6 +424,7 @@ class DDPG(object):
                 plt.ylabel(prop_name)
                 plt.legend()
                 plt.savefig(os.path.join(self.plots_path,"{}.png".format(prop_name)))
+                plt.clf()
                 plt.close()
 
         def add_logs(self,log_dict,n_iter):

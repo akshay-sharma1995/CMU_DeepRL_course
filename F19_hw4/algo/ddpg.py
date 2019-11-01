@@ -179,8 +179,9 @@ class DDPG(object):
                 """
                 critic_loss_arr = []
                 td_error_arr = []
-                estimated_q_before_arr = []
-                estimated_q_after_arr = []
+#                estimated_q_before_arr = []
+ #               estimated_q_after_arr = []
+                estimated_q_val_ep_arr = []
                 q_first_state_arr = []
                 actor_loss_arr  = []
                 mean_test_rewards_arr = []
@@ -256,7 +257,7 @@ class DDPG(object):
 
                                         self.copyWeights(self.actor_target,self.actor)
                                         self.copyWeights(self.critic_target,self.critic)
-
+                        
 
                                                 
                         if hindsight:
@@ -298,7 +299,6 @@ class DDPG(object):
                                             self.actor.optimizer.step()
 
                                             actor_loss += policy_loss.item()
-
                                             self.copyWeights(self.actor_target,self.actor)
                                             self.copyWeights(self.critic_target,self.critic)
 
@@ -306,13 +306,19 @@ class DDPG(object):
                         actor_loss_arr.append(actor_loss/step)
                         
                         if not hindsight:
-                            estimated_q_after_arr.append(self.calc_q_vals_after_update(store_states))
-                            estimated_q_before_arr.append(estimated_q_before/len(store_states))
-                            self.add_logs({'est_q_after':estimated_q_after_arr[-1],
-                                                'est_q_before':estimated_q_before_arr[-1],
-                                                'q_first_state':q_first_state_arr[-1],
-                                                'td_error':td_error_arr[-1]
-                                                },i)
+        #                    estimated_q_after_arr.append(self.calc_q_vals_after_update(store_states))
+         #                   estimated_q_before_arr.append(estimated_q_before/len(store_states))
+         
+                            if(self.replay_buff.count() >= BATCH_SIZE):
+                                with torch.no_grad():
+                                    Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
+                                    sampled_states = torch.from_numpy(np.stack(Batch[:,0]))
+                                    estimated_q_val_ep_arr.append(self.critic(sampled_states,self.actor(sampled_states)).mean().item())
+
+    #                    self.add_logs({'estimated_q_val_ep':estimated_q_val_ep_arr[-1],
+     #                                           'q_first_state':q_first_state_arr[-1],
+      #                                          'td_error':td_error_arr[-1]
+       #                                         },i)
 
 
                         del store_states, store_actions
@@ -332,22 +338,24 @@ class DDPG(object):
                                 np.save(os.path.join(self.data_path,"actor_loss.npy"),np.array(actor_loss_arr))
                                 np.save(os.path.join(self.data_path,"td_error.npy"),np.array(td_error_arr))
                                 if not hindsight:
-                                    np.save(os.path.join(self.data_path,"estimated_q_after.npy"),np.array(estimated_q_after_arr))
-                                    np.save(os.path.join(self.data_path,"estimated_q_before.npy"),np.array(estimated_q_before_arr))
+  #                                  np.save(os.path.join(self.data_path,"estimated_q_after.npy"),np.array(estimated_q_after_arr))
+   #                                 np.save(os.path.join(self.data_path,"estimated_q_before.npy"),np.array(estimated_q_before_arr))
                                     np.save(os.path.join(self.data_path,"q_first_state.npy"),np.array(q_first_state_arr))
+                                    np.save(os.path.join(self.data_path,"estimated_q_val_ep"),np.array(estimated_q_val_ep_arr))
                                 print('Evaluation: success = %.2f; return = %.2f' % (successes, mean_rewards))
                                 with open(self.outfile, "a") as f:
                                         f.write("%.2f, %.2f,\n" % (successes, mean_rewards))
-                                self.add_logs({'mean_test_reward':mean_rewards,
-                                                'actor_loss':actor_loss
-                                                },i/100)
+          #                      self.add_logs({'mean_test_reward':mean_rewards,
+           #                                     'actor_loss':actor_loss
+            #                                    },i/100)
 
                 self.plot_prop(td_error_arr,"td_error")
                 if not hindsight:
                     self.plot_rewards(mean_test_rewards_arr,std_test_rewards_arr)
-                    self.plot_prop(estimated_q_after_arr,"expected_return")
-                    self.plot_prop(estimated_q_before_arr,"estimated_q_before")
+ #                   self.plot_prop(estimated_q_after_arr,"expected_return")
+#                    self.plot_prop(estimated_q_before_arr,"estimated_q_before")
                     self.plot_prop(q_first_state_arr,"q_first_state_action")
+                    self.plot_prop(estimated_q_val_ep_arr,"estimated_q_val_ep")
 
         def calc_q_vals_before_update(self,states,actions):
             with torch.no_grad(): 

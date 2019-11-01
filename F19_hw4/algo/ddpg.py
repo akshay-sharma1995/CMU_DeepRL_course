@@ -51,7 +51,7 @@ class EpsilonNormalActionNoise(object):
 class DDPG(object):
         """A class for running the DDPG algorithm."""
 
-        def __init__(self, env, lr_a,lr_c, sigma,data_path,plots_path, outfile_name,device):
+        def __init__(self, env, lr_a,lr_c, sigma,data_path,plots_path, outfile_name,device,logger=None):
                 """Initialize the DDPG object.
 
                 Args:
@@ -65,6 +65,7 @@ class DDPG(object):
                 self.data_path = data_path
                 self.plots_path = plots_path
                 self.device = device
+                self.logger = logger
 
                 self.actor = ActorNetwork(state_size=state_dim, 
                                             action_size=action_dim, 
@@ -179,6 +180,8 @@ class DDPG(object):
                 """
                 critic_loss_arr = []
                 td_error_arr = []
+                estimated_q_before_arr = []
+                estimated_q_after_arr = []
                 actor_loss_arr  = []
                 mean_test_rewards_arr = []
                 std_test_rewards_arr = []
@@ -197,6 +200,8 @@ class DDPG(object):
                         loss = 0
                         actor_loss = 0
                         critic_loss = 0
+                        estimated_q_before = 0
+                        estimated_q_after = 0
                         store_states = []
                         store_actions = []
                         while not done:
@@ -248,7 +253,7 @@ class DDPG(object):
                                         self.copyWeights(self.critic_target,self.critic)
 
 
-
+                                                
                         if hindsight:
                                 # For HER, we also want to save the final next_state.
                                 
@@ -294,6 +299,7 @@ class DDPG(object):
 
 
 
+                        estimated_q_after_arr.append(self.calc_q_vals_after_update(store_states))
 
                         del store_states, store_actions
                         store_states, store_actions = [], []
@@ -306,6 +312,7 @@ class DDPG(object):
                         print("\tSteps = %d; Info = %s" % (step, info['done']))
                         if i % 100 == 0:
                                 successes, mean_rewards, std = self.evaluate(10)
+
                                 mean_test_rewards_arr.append(mean_rewards)
                                 std_test_rewards_arr.append(std)
 
@@ -313,11 +320,31 @@ class DDPG(object):
                                 np.save(os.path.join(self.data_path,"std_test_reward.npy"),np.array(std_test_rewards_arr)) 
                                 np.save(os.path.join(self.data_path,"actor_loss.npy"),np.array(actor_loss_arr))
                                 np.save(os.path.join(self.data_path,"td_error.npy"),np.array(td_error_arr))
+                                np.save(os.path.join(self.data_path,"estimated_q_after.npy"),np.array(estimated_q_after_arr))
                                 print('Evaluation: success = %.2f; return = %.2f' % (successes, mean_rewards))
                                 with open(self.outfile, "a") as f:
                                         f.write("%.2f, %.2f,\n" % (successes, mean_rewards))
-
+                                self.add_logs({'mean_test_reward':mean_rewards,
+                                                'actor_loss':actor_loss
+                                                },i/100)
                 self.plot_rewards(mean_test_rewards_arr,std_test_rewards_arr)
+                self.plot_prop(estimated_q_after_arr,"expected_return")
+
+        def calc_q_vals_before_update(self,states,actions):
+            with torch.no_grad(): 
+                s_tensor = torch.from_numpy(states)
+                a_tensor = torch.from_numpy(actions)
+                estimated_q = self.critic(s_tensor,a_tensor).mean()
+            return estimated_q.item()
+
+
+        def calc_q_vals_after_update(self,states):
+            with torch.no_grad(): 
+                s_tensor = torch.from_numpy(states)
+                a_tensor = self.actor(s_tensor)
+                estimated_q = self.critic(s_tensor,a_tensor).mean()
+            return estimated_q.item()
+
                         
         def add_hindsight_replay_experience(self, states, actions):
                 """Relabels a trajectory using HER.
@@ -377,4 +404,18 @@ class DDPG(object):
                 plt.ylabel("test_reward")
                 plt.legend()
                 plt.savefig(os.path.join(self.plots_path,"test_rewards.png"))
-                plt.close() 
+                plt.close()
+
+        def plot_prop(self,prop,prop_name):
+                fig = plt.figure(figsize=(16, 9))
+                plt.plot(prop,label=prop_name,color='magenta')
+                plt.fill_between(x,mean-std, mean+std,facecolor='lightpink',alpha=0.5)
+                plt.xlabel("num episodes / {}".format(100))
+                plt.ylabel(prop_name)
+                plt.legend()
+                plt.savefig(os.path.join(self.plots_path,"{}.png".format(prop_name))
+                plt.close()
+
+        def add_logs(self,log_dict,n_iter):
+            for key in log_dict.keys():
+                self.logger.add_scalar(key,log_dict[key],n_iter)

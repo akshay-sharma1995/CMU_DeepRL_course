@@ -7,6 +7,7 @@ import argparse
 import torch
 import time
 import pdb
+from tensorboardX import SummaryWriter
 def parse_arguments():
 # Command-line flags are defined here.
         parser = argparse.ArgumentParser()
@@ -34,7 +35,6 @@ def parse_arguments():
 
 def main():
         args = parse_arguments()
-
         if(args.try_gpu==1):
             DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
@@ -59,11 +59,15 @@ def main():
         curr_run_path = os.path.join(env_path,"num_ep_{}_lra_{}_lrc_{}_sigma_{}{}".format(num_episodes,lr_a,lr_c,sigma,add_comment))
         data_path = os.path.join(curr_run_path,"data")
         plots_path = os.path.join(curr_run_path,"plots")
-       
-        make_dirs([results_dir,algo_path,env_path,curr_run_path,data_path,plots_path])
+        log_file_path = os.path.join(curr_run_path,"logs")
+
+        make_dirs([results_dir,algo_path,env_path,curr_run_path,data_path,plots_path,log_file_path])
+
+
+        sum_writer = SummaryWriter(logdir=log_file_path)
         outfile = os.path.join(curr_run_path,'ddpg_log.txt') 
         env = gym.make(env_name)
-        algo = DDPG(env,lr_a,lr_c,sigma,data_path,plots_path,outfile,device=DEVICE)
+        algo = DDPG(env,lr_a,lr_c,sigma,data_path,plots_path,outfile,device=DEVICE,logger=sum_writer)
         
         start_time = time.time()
         algo.train(num_episodes,hindsight=hindsight)

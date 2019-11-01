@@ -185,7 +185,6 @@ class DDPG(object):
                 actor_loss_arr  = []
                 mean_test_rewards_arr = []
                 std_test_rewards_arr = []
-                #epsilon = 0.1
                 self.actor.train()
                 self.critic.train()
                 self.actor_target.train()
@@ -217,7 +216,8 @@ class DDPG(object):
                                 state_tmp = torch.unsqueeze(torch.from_numpy(state),dim=0)
                                 action_tmp = torch.unsqueeze(torch.from_numpy(action),dim=0)
                                 estimated_q_before += self.critic(state_tmp,action_tmp).item()
-
+                                if step==1:
+                                    q_first_state_arr.append(estimated_q_before*1.0)
                             store_actions.append(action*1.0)
                             store_states.append(state*1.0)
                             next_state , reward, done, info = self.env.step(action)
@@ -302,14 +302,21 @@ class DDPG(object):
                                             self.copyWeights(self.actor_target,self.actor)
                                             self.copyWeights(self.critic_target,self.critic)
 
+                        td_error_arr.append(loss/step)
+                        actor_loss_arr.append(actor_loss/step)
+                        
                         if not hindsight:
                             estimated_q_after_arr.append(self.calc_q_vals_after_update(store_states))
                             estimated_q_before_arr.append(estimated_q_before/len(store_states))
+                            self.add_logs({'est_q_after':estimated_q_after_arr[-1],
+                                                'est_q_before':estimated_q_before_arr[-1],
+                                                'q_first_state':q_first_state_arr[-1],
+                                                'td_error':td_error_arr[-1]
+                                                },i)
+
 
                         del store_states, store_actions
                         store_states, store_actions = [], []
-                        td_error_arr.append(loss/step)
-                        actor_loss_arr.append(actor_loss/step)
                         # Logging
                         print("Episode %d: Total reward = %d" % (i, total_reward))
                         print("\tTD loss = %.2f" % (loss / step,))
@@ -327,6 +334,7 @@ class DDPG(object):
                                 if not hindsight:
                                     np.save(os.path.join(self.data_path,"estimated_q_after.npy"),np.array(estimated_q_after_arr))
                                     np.save(os.path.join(self.data_path,"estimated_q_before.npy"),np.array(estimated_q_before_arr))
+                                    np.save(os.path.join(self.data_path,"q_first_state.npy"),np.array(q_first_state_arr))
                                 print('Evaluation: success = %.2f; return = %.2f' % (successes, mean_rewards))
                                 with open(self.outfile, "a") as f:
                                         f.write("%.2f, %.2f,\n" % (successes, mean_rewards))
@@ -339,6 +347,7 @@ class DDPG(object):
                     self.plot_rewards(mean_test_rewards_arr,std_test_rewards_arr)
                     self.plot_prop(estimated_q_after_arr,"expected_return")
                     self.plot_prop(estimated_q_before_arr,"estimated_q_before")
+                    self.plot_prop(q_first_state_arr,"q_first_state_action")
 
         def calc_q_vals_before_update(self,states,actions):
             with torch.no_grad(): 
@@ -419,7 +428,7 @@ class DDPG(object):
 
         def plot_prop(self,prop,prop_name):
                 fig = plt.figure(figsize=(16, 9))
-                plt.plot(prop,label=prop_name,color='magenta')
+                plt.plot(prop,label=prop_name,color='navy')
                 plt.xlabel("num episodes")
                 plt.ylabel(prop_name)
                 plt.legend()

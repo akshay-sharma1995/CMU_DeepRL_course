@@ -161,7 +161,6 @@ class DDPG(object):
                                         plt.savefig(os.path.join(self.plots_path,"res.png"))
                                         plt.close()
                                         # plt.show()
-                                        pass
                 self.actor.train()
                 self.critic.train()
                 return np.mean(success_vec), np.mean(test_rewards), np.std(test_rewards)
@@ -329,18 +328,19 @@ class DDPG(object):
                                                 },i/100)
                 self.plot_rewards(mean_test_rewards_arr,std_test_rewards_arr)
                 self.plot_prop(estimated_q_after_arr,"expected_return")
+                self.plot_prop(td_error_arr,"td_error")
 
         def calc_q_vals_before_update(self,states,actions):
             with torch.no_grad(): 
-                s_tensor = torch.from_numpy(states)
-                a_tensor = torch.from_numpy(actions)
+                s_tensor = torch.tensor(states)
+                a_tensor = torch.tensor(actions)
                 estimated_q = self.critic(s_tensor,a_tensor).mean()
             return estimated_q.item()
 
 
         def calc_q_vals_after_update(self,states):
             with torch.no_grad(): 
-                s_tensor = torch.from_numpy(states)
+                s_tensor = torch.tensor(states)
                 a_tensor = self.actor(s_tensor)
                 estimated_q = self.critic(s_tensor,a_tensor).mean()
             return estimated_q.item()
@@ -409,11 +409,10 @@ class DDPG(object):
         def plot_prop(self,prop,prop_name):
                 fig = plt.figure(figsize=(16, 9))
                 plt.plot(prop,label=prop_name,color='magenta')
-                plt.fill_between(x,mean-std, mean+std,facecolor='lightpink',alpha=0.5)
-                plt.xlabel("num episodes / {}".format(100))
+                plt.xlabel("num episodes")
                 plt.ylabel(prop_name)
                 plt.legend()
-                plt.savefig(os.path.join(self.plots_path,"{}.png".format(prop_name))
+                plt.savefig(os.path.join(self.plots_path,"{}.png".format(prop_name)))
                 plt.close()
 
         def add_logs(self,log_dict,n_iter):

@@ -1,6 +1,7 @@
 import gym
 import envs
 from algo.ddpg import DDPG
+from algo.TD3 import DDPG_TD3
 import os
 from matplotlib import pyplot as plt
 import argparse
@@ -30,6 +31,10 @@ def parse_arguments():
                                                 default = 1, help="try to look for gpu")
         parser.add_argument("--HER", dest="HER", type=int,
                                                 default = 1, help="try to look for gpu")
+        parser.add_argument("--TD3", dest="TD3", type=int,
+                                                default = 1, help="want to run TD3")
+        parser.add_argument("--delay", dest="delay", type=int,
+                                                default = 2, help="update delay for TD3")
 
         return parser.parse_args()
 
@@ -41,22 +46,32 @@ def main():
             DEVICE = torch.device("cpu")
         num_episodes = args.num_episodes
         sigma = args.sigma
-  #      epsilon = args.epsilon
         lr_a = args.lr_a
         lr_c = args.lr_c
         env_name = args.env
         add_comment = args.add_comment
-        # pdb.set_trace()
+        TD3 = args.TD3
+        delay = args.delay
         hindsight = bool(args.HER)
         results_dir = os.path.join(os.getcwd(),"results")
+        
+        if(TD3==1 and hindsight==1):
+            print("HER + TD3 not implemented. Please turn one of them off")
+            raise NotImplementedError
+
         if(hindsight):
             algo_path = os.path.join(results_dir,"her")
+        elif(TD3):
+            algo_path = os.path.join(results_dir,"td3")
         else:
             algo_path = os.path.join(results_dir,"ddpg")
 
 
         env_path = os.path.join(algo_path,env_name)
-        curr_run_path = os.path.join(env_path,"num_ep_{}_lra_{}_lrc_{}_sigma_{}{}".format(num_episodes,lr_a,lr_c,sigma,add_comment))
+        if(TD3):
+            curr_run_path = os.path.join(env_path,"num_ep_{}_lra_{}_lrc_{}_sigma_{}_delay_{}{}".format(num_episodes,lr_a,lr_c,sigma,delay,add_comment))
+        else:
+            curr_run_path = os.path.join(env_path,"num_ep_{}_lra_{}_lrc_{}_sigma_{}{}".format(num_episodes,lr_a,lr_c,sigma,add_comment))
         data_path = os.path.join(curr_run_path,"data")
         plots_path = os.path.join(curr_run_path,"plots")
         log_file_path = os.path.join(curr_run_path,"logs")
@@ -67,7 +82,10 @@ def main():
         sum_writer = SummaryWriter(logdir=log_file_path)
         outfile = os.path.join(curr_run_path,'ddpg_log.txt') 
         env = gym.make(env_name)
-        algo = DDPG(env,lr_a,lr_c,sigma,data_path,plots_path,outfile,device=DEVICE,logger=sum_writer)
+        if(TD3):
+            algo = DDPG_TD3(env,lr_a,lr_c,sigma,data_path,plots_path,outfile,device=DEVICE,delay=delay,logger=sum_writer)
+        else:
+            algo = DDPG(env,lr_a,lr_c,sigma,data_path,plots_path,outfile,device=DEVICE,logger=sum_writer)
         
         start_time = time.time()
         algo.train(num_episodes,hindsight=hindsight)

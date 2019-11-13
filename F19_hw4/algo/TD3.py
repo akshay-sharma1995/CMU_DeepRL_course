@@ -48,10 +48,10 @@ class EpsilonNormalActionNoise(object):
                         return np.random.uniform(-1.0, 1.0, size=action.shape)
 
 
-class DDPG(object):
+class DDPG_TD3(object):
         """A class for running the DDPG algorithm."""
 
-        def __init__(self, env, lr_a,lr_c, sigma,data_path,plots_path, outfile_name,device,logger=None):
+        def __init__(self, env, lr_a,lr_c, sigma,data_path,plots_path, outfile_name,device,delay,logger=None):
                 """Initialize the DDPG object.
 
                 Args:
@@ -66,33 +66,44 @@ class DDPG(object):
                 self.plots_path = plots_path
                 self.device = device
                 self.logger = logger
-
+                self.delay = delay
                 self.actor = ActorNetwork(state_size=state_dim, 
                                             action_size=action_dim, 
                                             learning_rate=lr_a,
                                             device=device)
 
-                self.critic = CriticNetwork(state_size=state_dim,
+                self.critic_1 = CriticNetwork(state_size=state_dim,
                                             action_size=action_dim, 
                                             learning_rate=lr_c,
                                             device=device)
 
+                self.critic_2 = CriticNetwork(state_size=state_dim,
+                                            action_size=action_dim, 
+                                            learning_rate=lr_c,
+                                            device=device)
 
                 self.actor_target = ActorNetwork(state_size=state_dim, 
                                                     action_size=action_dim, 
                                                     learning_rate=lr_a,
                                                     device=device)
 
-                self.critic_target = CriticNetwork(state_size=state_dim, 
+                self.critic_1_target = CriticNetwork(state_size=state_dim, 
+                                                    action_size=action_dim, 
+                                                    learning_rate=lr_c,
+                                                    device=device) 
+
+                self.critic_2_target = CriticNetwork(state_size=state_dim, 
                                                     action_size=action_dim, 
                                                     learning_rate=lr_c,
                                                     device=device) 
 
                 if(device.type=="cuda"):
                         self.actor.to(device)
-                        self.critic.to(device)
+                        self.critic_1.to(device)
+                        self.critic_2.to(device)
                         self.actor_target.to(device)
-                        self.critic_target.to(device)
+                        self.critic_1_target.to(device)
+                        self.critic_2_target.to(device)
                         print("models moved to gpu")
                 else:
                     print("models on cpu")
@@ -117,7 +128,6 @@ class DDPG(object):
                 success_vec = []
 
                 self.actor.eval()
-                self.critic.eval()
 
                 fig = plt.figure(figsize=(12, 12))
                 for i in range(num_episodes):
@@ -162,12 +172,11 @@ class DDPG(object):
                                         plt.close()
                                         # plt.show()
                 self.actor.train()
-                self.critic.train()
                 return np.mean(success_vec), np.mean(test_rewards), np.std(test_rewards)
 
-        def copyWeights(self,target_network,network):
+        def copyWeights(self,target_network,network,tau=TAU):
                 for target_param, param in zip(target_network.parameters(), network.parameters()):
-                        target_param.data.copy_(TAU*param.data + target_param.data*(1.0 - TAU))
+                        target_param.data.copy_(tau*param.data + target_param.data*(1.0 - tau))
 
 
         def train(self, num_episodes, hindsight=False):
@@ -179,17 +188,23 @@ class DDPG(object):
                 """
                 critic_loss_arr = []
                 td_error_arr = []
-#                estimated_q_before_arr = []
- #               estimated_q_after_arr = []
                 estimated_q_val_ep_arr = []
                 q_first_state_arr = []
                 actor_loss_arr  = []
                 mean_test_rewards_arr = []
                 std_test_rewards_arr = []
                 self.actor.train()
-                self.critic.train()
+                self.critic_1.train()
+                self.critic_2.train()
                 self.actor_target.train()
-                self.critic_target.train()
+                self.critic_1_target.train()
+                self.critic_2_target.train()
+
+                
+                self.copyWeights(self.actor_target,self.actor,tau=1.0)
+                self.copyWeights(self.critic_1_target,self.critic_1,tau=1.0)
+                self.copyWeights(self.critic_2_target,self.critic_2,tau=1.0)
+
                 epsilon = 1.0
                 for i in range(num_episodes):
                         epsilon = max((0.5 - 0.45*i/20000),0.05)
@@ -216,7 +231,7 @@ class DDPG(object):
                             with torch.no_grad():
                                 state_tmp = torch.unsqueeze(torch.from_numpy(state),dim=0)
                                 action_tmp = torch.unsqueeze(torch.from_numpy(action),dim=0)
-                                estimated_q_before += self.critic(state_tmp,action_tmp).item()
+                                estimated_q_before += self.critic_1(state_tmp,action_tmp).item()
                                 if step==1:
                                     q_first_state_arr.append(estimated_q_before*1.0)
                             store_actions.append(action*1.0)
@@ -228,7 +243,7 @@ class DDPG(object):
 
                             if hindsight == False:
                                 if(self.replay_buff.count() >= 3*BATCH_SIZE):
-                                    c_loss, a_loss, tde = self.update_networks()
+                                    c_loss, a_loss, tde = self.update_networks(i)
                                     critic_loss += c_loss
                                     actor_loss += a_loss
                                     loss += tde
@@ -255,7 +270,7 @@ class DDPG(object):
                                 with torch.no_grad():
                                     Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
                                     sampled_states = torch.from_numpy(np.stack(Batch[:,0]))
-                                    estimated_q_val_ep_arr.append(self.critic(sampled_states,self.actor(sampled_states)).mean().item())
+                                    estimated_q_val_ep_arr.append(self.critic_1(sampled_states,self.actor(sampled_states)).mean().item())
 
     #                    self.add_logs({'estimated_q_val_ep':estimated_q_val_ep_arr[-1],
      #                                           'q_first_state':q_first_state_arr[-1],
@@ -280,8 +295,6 @@ class DDPG(object):
                                 np.save(os.path.join(self.data_path,"actor_loss.npy"),np.array(actor_loss_arr))
                                 np.save(os.path.join(self.data_path,"td_error.npy"),np.array(td_error_arr))
                                 if not hindsight:
-  #                                  np.save(os.path.join(self.data_path,"estimated_q_after.npy"),np.array(estimated_q_after_arr))
-   #                                 np.save(os.path.join(self.data_path,"estimated_q_before.npy"),np.array(estimated_q_before_arr))
                                     np.save(os.path.join(self.data_path,"q_first_state.npy"),np.array(q_first_state_arr))
                                     np.save(os.path.join(self.data_path,"estimated_q_val_ep"),np.array(estimated_q_val_ep_arr))
                                 print('Evaluation: success = %.2f; return = %.2f' % (successes, mean_rewards))
@@ -361,7 +374,7 @@ class DDPG(object):
                 #         self.replay_buff.add(s, a, r, ns, done)
                 #     print("dones: {}".format(num_dones))
 
-        def update_networks(self):
+        def update_networks(self,i):
 
                 Batch = np.array(self.replay_buff.get_batch(BATCH_SIZE))
                 s = torch.from_numpy(np.stack(Batch[:,0]))
@@ -369,28 +382,42 @@ class DDPG(object):
                 r = torch.tensor(np.stack(Batch[:,2]),dtype=torch.float32).to(device=self.device)
                 ns = torch.from_numpy(np.stack(Batch[:,3]))
                 d = torch.tensor(np.stack(Batch[:,4]),dtype=torch.float32).to(device=self.device)
-                Q_pred = self.critic(s,a)
+                Q_pred_1 = self.critic_1(s,a)
+                Q_pred_2 = self.critic_2(s,a)
                 with torch.no_grad():
                         na = self.actor_target(ns)
-                        Q_target = torch.unsqueeze(r,dim=1) +  GAMMA * self.critic_target(ns,na) * torch.unsqueeze(1.0-d, dim=1)
+                        q_val_nxt_1 = self.critic_1_target(ns,na)
+                        q_val_nxt_2 = self.critic_2_target(ns,na)
+                        Q_target = torch.unsqueeze(r,dim=1) +  GAMMA * torch.min(q_val_nxt_1,q_val_nxt_2) * torch.unsqueeze(1.0-d, dim=1)
             
-                val_loss = self.critic.mse_loss(Q_pred,Q_target)
-                self.critic.optimizer.zero_grad()
-                val_loss.backward()
-                self.critic.optimizer.step()
-                td_error = torch.abs(Q_pred - Q_target).mean().item()
-                
-                self.critic.optimizer.zero_grad()
-                self.actor.optimizer.zero_grad()
-                policy_loss = -self.critic(s,self.actor(s)).mean()
-                
-                policy_loss.backward()
-                self.actor.optimizer.step()
+                val_loss_1 = self.critic_1.mse_loss(Q_pred_1,Q_target)
+                val_loss_2 = self.critic_2.mse_loss(Q_pred_2,Q_target)
 
-                self.copyWeights(self.actor_target,self.actor)
-                self.copyWeights(self.critic_target,self.critic)
+                self.critic_1.optimizer.zero_grad()
+                val_loss_1.backward()
+                self.critic_1.optimizer.step()
 
-                return val_loss.item(),policy_loss.item(),td_error
+                self.critic_2.optimizer.zero_grad()
+                val_loss_2.backward()
+                self.critic_2.optimizer.step()
+                
+                td_error_1 = torch.abs(Q_pred_1 - Q_target).mean().item()
+                td_error_2 = torch.abs(Q_pred_2 - Q_target).mean().item()
+                
+                policy_loss = torch.tensor([0])
+                if(i%self.delay):
+                    self.critic_1.optimizer.zero_grad()
+                    self.actor.optimizer.zero_grad()
+                    policy_loss = -self.critic_1(s,self.actor(s)).mean()
+                    
+                    policy_loss.backward()
+                    self.actor.optimizer.step()
+
+                    self.copyWeights(self.actor_target,self.actor)
+                    self.copyWeights(self.critic_1_target,self.critic_1)
+                    self.copyWeights(self.critic_2_target,self.critic_2)
+
+                return val_loss_1.item(),policy_loss.item(),td_error_1
 
         def plot_rewards(self,mean_arr,std_arr):
                 mean = np.array(mean_arr)

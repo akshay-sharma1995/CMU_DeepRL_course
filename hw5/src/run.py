@@ -41,6 +41,8 @@ class ExperimentGTDynamics(object):
                                  use_random_optimizer=True)
 
     def test(self, num_episodes, optimizer='cem'):
+        # optimizer = "random"
+        print(optimizer)
         samples = []
         for j in range(num_episodes):
             print('Test episode {}'.format(j))
@@ -130,17 +132,17 @@ def test_cem_gt_dynamics(num_episode=10):
     exp = ExperimentGTDynamics(env_name='Pushing2D-v1', mpc_params=mpc_params)
     avg_reward, avg_success = exp.test(num_episode)
     print('CEM PushingEnv: avg_reward: {}, avg_success: {}'.format(avg_reward, avg_success))
-    #
+    
     # mpc_params = {'use_mpc': True, 'num_particles': 1}
     # exp = ExperimentGTDynamics(env_name='Pushing2D-v1', mpc_params=mpc_params)
     # avg_reward, avg_success = exp.test(num_episode)
     # print('MPC PushingEnv: avg_reward: {}, avg_success: {}'.format(avg_reward, avg_success))
-    #
+    
     # mpc_params = {'use_mpc': False, 'num_particles': 1}
     # exp = ExperimentGTDynamics(env_name='Pushing2DNoisyControl-v1', mpc_params=mpc_params)
     # avg_reward, avg_success = exp.test(num_episode)
     # print('CEM PushingEnv Noisy: avg_reward: {}, avg_success: {}'.format(avg_reward, avg_success))
-    #
+    
     # mpc_params = {'use_mpc': True, 'num_particles': 1}
     # exp = ExperimentGTDynamics(env_name='Pushing2DNoisyControl-v1', mpc_params=mpc_params)
     # avg_reward, avg_success = exp.test(num_episode)

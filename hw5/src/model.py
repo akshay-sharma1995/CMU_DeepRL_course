@@ -2,13 +2,12 @@ import numpy as np
 from util import ZFilter
 import torch
 from torch import nn as nn
-from torch import nn.functional as F
 import pdb
 import os
 HIDDEN1_UNITS = 400
 HIDDEN2_UNITS = 400
 HIDDEN3_UNITS = 400
-
+import tensorflow as tf
 
 class PENN:
     """

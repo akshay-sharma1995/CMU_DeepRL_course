@@ -107,9 +107,39 @@ class MPC:
                 """
                 # TODO: write your code here
 
-                
-                # raise NotImplementedError
-                pass
+                # print(np.shape(obs_trajs))
+
+                # print(np.shape(acs_trajs))
+
+                # print(np.shape(obs_trajs[0]) )
+
+                # print(np.shape(acs_trajs[0]) )
+
+
+                # print(np.shape(obs_trajs[1]) )
+
+                # print(np.shape(acs_trajs[1]) )  
+
+                # print(np.shape(obs_trajs[0:-1,:]))
+
+                # print(np.shape(acs_trajs))
+
+                # obs_trajs = np.stack(obs_trajs)
+
+                # acs_trajs = np.stack(acs_trajs)
+
+                # print(np.shape(obs_trajs))
+
+                # print(np.shape(acs_trajs))
+
+
+                pdb.set_trace()
+                inputs  = np.concatenate((obs_trajs[:][0:-1,:],acs_trajs),axis=1)
+
+                targets = obs_trajs[1:,:]
+
+                self.model.train(inputs, targets, batch_size=128, epochs=100)
+
 
         def reset(self):
                 # TODO: write your code here
@@ -184,6 +214,8 @@ class MPC:
             """
             # TODO: write your code here
             self.reset()
+            if t==0:
+                self.set_goal(state)
             if self.use_random_optimizer:
                 if self.use_mpc:
                     actions = self.random_action(state,self.mean,self.sigma)

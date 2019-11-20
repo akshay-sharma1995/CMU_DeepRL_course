@@ -111,12 +111,11 @@ class PENN:
         with torch.no_grad():
             inputs = torch.tensor(inputs).to(device=DEVICE).float()
             for i,num in enumerate(model_num):
-                out = np.array(self.networks[num](inputs[i]))
+                out = self.networks[num](inputs[i])
                 outs.append(out)
 
-        # pdb.set_trace()
-
-        outs = torch.tensor(outs).to(device=DEVICE).float()
+        outs = torch.stack(outs)
+        # outs = torch.tensor(outs).to(device=DEVICE).float()
 
         mean , logvar =  self.get_output(outs)
         
@@ -187,7 +186,7 @@ class PENN:
                 epoch_loss /= num_batches
                 epoch_rmse_arr.append(rmse*1.0)
                 epoch_loss_arr.append(epoch_loss*1.0)
-                # print("Network: {} Epoch: {} epoch_loss: {} RMSE: {} ".format(n,e,epoch_loss,rmse))
+                print("Network: {} Epoch: {} epoch_loss: {} RMSE: {} ".format(n,e,epoch_loss,rmse))
                 self.save_data(epoch_loss_arr,"loss",self.save_path)
                 self.save_data(epoch_rmse_arr,"rmse",self.save_path)
             self.plot_prop(epoch_loss_arr,"loss",self.plot_path)

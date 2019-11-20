@@ -90,8 +90,6 @@ class MPC:
         def predict_next_state_model(self, states, actions):
                 """ Given a list of state action pairs, use the learned model to predict the next state"""
                 # TODO: write your code here
-
-                # pdb.set_trace()
                 if states.shape[1] == 10:
                     states  = states[:,0:-2] 
 

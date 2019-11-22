@@ -43,7 +43,6 @@ class PENN:
 
         self.networks   = self.define_models()
         self.shift_networks_to_gpu(self.networks)
-        # self.network = Network(state_dim, action_dim, learning_rate)
 
         # TODO write your code here
         # Create and initialize your mode
@@ -87,15 +86,6 @@ class PENN:
         logvar = self.min_logvar + F.softplus(logvar - self.min_logvar)
         return mean, logvar
 
-    # def create_network(self):
-    #     I = Input(shape=[self.state_dim + self.action_dim], name='input')
-    #     h1 = Dense(HIDDEN1_UNITS, activation='relu', kernel_regularizer=l2(0.0001))(I)
-    #     h2 = Dense(HIDDEN2_UNITS, activation='relu', kernel_regularizer=l2(0.0001))(h1)
-    #     h3 = Dense(HIDDEN3_UNITS, activation='relu', kernel_regularizer=l2(0.0001))(h2)
-    #     O = Dense(2 * self.state_dim, activation='linear', kernel_regularizer=l2(0.0001))(h3)
-    #     model = Model(input=I, output=O)
-    #     return model
-
     def lossFun(self, mean, cov, targets):
 
         # targets = torch.tensor(targets)
@@ -103,21 +93,28 @@ class PENN:
 
     def predict_ns(self,inputs,model_num):
 
-        # inputs = torch.tensor(inputs)
-        # pdb.set_trace()
+        outs = [None]*len(inputs)
+        inputs = torch.tensor(inputs).to(device=DEVICE).float()
+    
+        for num_net in range(self.num_nets):
+            indices_select = np.argwhere(1*((model_num-num_net)==0))[:,0]
+            net_input = inputs[indices_select]
+            with torch.no_grad():
+                out = self.networks[num_net](net_input)
+            for i,idx in enumerate(indices_select):
+                outs[idx] = out[i]
+        
+        # outs = []
+        # inputs = torch.tensor(inputs).to(device=DEVICE).float()
+        # with torch.no_grad():
+            # for i,num in enumerate(model_num):
+                # out = self.networks[num](inputs[i])
+                # outs.append(out)
 
-        outs = []
 
-        with torch.no_grad():
-            inputs = torch.tensor(inputs).to(device=DEVICE).float()
-            for i,num in enumerate(model_num):
-                out = np.array(self.networks[num](inputs[i]))
-                outs.append(out)
+        # outs = torch.tensor(outs).to(device=DEVICE).float()
 
-        # pdb.set_trace()
-
-        outs = torch.tensor(outs).to(device=DEVICE).float()
-
+        outs = torch.stack(outs)
         mean , logvar =  self.get_output(outs)
         
 
@@ -127,9 +124,6 @@ class PENN:
 
         ns = mean + std*np.random.normal(size = mean.shape)
 
-        # ns = []
-        # for i in range(mean.shape[0]):
-        #     ns.append(np.random.multivariate_normal(mean[i], np.diag(var[i])) )
 
         return np.array(ns)
 
@@ -173,7 +167,7 @@ class PENN:
                     
                     cov = torch.exp(logvar)
 
-                    loss = self.lossFun(mean,cov,target_batch)
+                    loss = 0.5*self.lossFun(mean,cov,target_batch)
 
                     loss = torch.mean(loss)
 
@@ -187,7 +181,7 @@ class PENN:
                 epoch_loss /= num_batches
                 epoch_rmse_arr.append(rmse*1.0)
                 epoch_loss_arr.append(epoch_loss*1.0)
-                # print("Network: {} Epoch: {} epoch_loss: {} RMSE: {} ".format(n,e,epoch_loss,rmse))
+                print("Network: {} Epoch: {} epoch_loss: {} RMSE: {} ".format(n,e,epoch_loss,rmse))
                 self.save_data(epoch_loss_arr,"loss",self.save_path)
                 self.save_data(epoch_rmse_arr,"rmse",self.save_path)
             self.plot_prop(epoch_loss_arr,"loss",self.plot_path)
@@ -231,9 +225,9 @@ class Network(nn.Module):
 
         # input = torch.tensor(input).float()
 
-        l1 = F.relu( self.l1(input) )
-        l2 = F.relu( self.l2(l1) )
-        l3 = F.relu( self.l3(l2) )
+        l1 = F.relu(self.l1(input))
+        l2 = F.relu(self.l2(l1))
+        l3 = F.relu(self.l3(l2))
         out = self.out(l3)
         return out
 

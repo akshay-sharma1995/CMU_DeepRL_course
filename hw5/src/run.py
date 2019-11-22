@@ -84,7 +84,7 @@ class ExperimentModelDynamics:
             self.exp_dir = os.getcwd()
 
         self.create_dirs(self.exp_dir)
-
+        self.samples = []
     def test(self, num_episodes, optimizer='cem'):
         samples = []
         print("optimizer: {}".format(optimizer))
@@ -101,13 +101,13 @@ class ExperimentModelDynamics:
 
     def model_warmup(self, num_episodes, num_epochs):
         """ Train a single probabilistic model using a random policy """
-        samples = []
+        # samples = []
         for i in range(num_episodes):
-            samples.append(self.agent.sample(self.task_horizon, self.random_policy_no_mpc))
+            self.samples.append(self.agent.sample(self.task_horizon, self.random_policy_no_mpc))
         epoch_loss_arr, epoch_rmse_arr =  self.cem_policy.train(
-                                                                [sample["obs"] for sample in samples],
-                                                                [sample["ac"] for sample in samples],
-                                                                [sample["rewards"] for sample in samples],
+                                                                [sample["obs"] for sample in self.samples],
+                                                                [sample["ac"] for sample in self.samples],
+                                                                [sample["rewards"] for sample in self.samples],
                                                                 epochs=num_epochs
                                                             )
         self.save_data(epoch_loss_arr,"loss_warmup",self.exp_dir)
@@ -132,11 +132,12 @@ class ExperimentModelDynamics:
                         self.task_horizon, self.cem_policy
                     )
                 )
+                self.samples.append(samples[-1])
             print("Rewards obtained:", [sample["reward_sum"] for sample in samples])
             loss_arr_curr, rmse_arr_curr = self.cem_policy.train(
-                                                                [sample["obs"] for sample in samples],
-                                                                [sample["ac"] for sample in samples],
-                                                                [sample["rewards"] for sample in samples],
+                                                                [sample["obs"] for sample in self.samples],
+                                                                [sample["ac"] for sample in self.samples],
+                                                                [sample["rewards"] for sample in self.samples],
                                                                 epochs=5
                                                             )
 

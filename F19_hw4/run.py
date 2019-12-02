@@ -32,7 +32,7 @@ def parse_arguments():
         parser.add_argument("--HER", dest="HER", type=int,
                                                 default = 1, help="try to look for gpu")
         parser.add_argument("--TD3", dest="TD3", type=int,
-                                                default = 1, help="want to run TD3")
+                                                default = 0, help="want to run TD3")
         parser.add_argument("--delay", dest="delay", type=int,
                                                 default = 2, help="update delay for TD3")
 

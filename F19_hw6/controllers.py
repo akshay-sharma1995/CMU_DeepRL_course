@@ -36,7 +36,7 @@ def simulate_dynamics(env, x, u, dt=1e-5):
     xdot = (x_new - x) / dt
     return xdot
 
-def approximate_A(env, x, u, delta=1e-5, dt=1e-5):
+def approximate_A(env,simulate_dynamics, x, u, delta=1e-5, dt=1e-5):
     """Approximate A matrix using finite differences.
 
     Parameters
@@ -65,18 +65,21 @@ def approximate_A(env, x, u, delta=1e-5, dt=1e-5):
     u0 = u*1.0
     env.state = x0*1.0
     
-    xdot0 = simulate_dynamics(env,x0,u0,dt)
+    f0 = simulate_dynamics(env,x0,u0)
 
     A = np.zeros((x.shape[0],x.shape[0]))
     for i in range(x0.shape[0]):
-        x_new = x0*1.0
-        x_new[i] += delta
-        xdot = simulate_dynamics(env,x_new,u0,dt)
-        A[:,i] = (xdot - xdot0) / delta
+        x_next = x0*1.0
+        x_prev = x0*1.0
+        x_next[i] += delta
+        x_prev[i] -= delta
+        f_next = simulate_dynamics(env,x_next,u0)
+        f_prev = simulate_dynamics(env,x_prev,u0)
+        A[:,i] = (f_next - f_prev) / (2*delta)
 
     return A
 
-def approximate_B(env, x, u, delta=1e-5, dt=1e-5):
+def approximate_B(env,simulate_dynamics, x, u, delta=1e-5, dt=1e-5):
     """Approximate B matrix using finite differences.
 
     Parameters
@@ -103,16 +106,21 @@ def approximate_B(env, x, u, delta=1e-5, dt=1e-5):
     x0 = x*1.0
     u0 = u*1.0
     env.state = x0*1.0
-    xdot0 = simulate_dynamics(env,x0,u0,dt)
+    f0 = simulate_dynamics(env,x0,u0,dt)
     
     B = np.zeros((x.shape[0],u.shape[0]))
 
     for i in range(u.shape[0]):
-        u_new = u0*1.0
-        u_new[i] += delta
+        u_next = u0*1.0
+        u_prev = u0*1.0
+        u_next[i] += delta
+        u_prev[i] -= delta
+
         env.state = x0*1.0
-        xdot = simulate_dynamics(env,x0,u_new,dt)
-        B[:,i] = (xdot - xdot0) / delta
+        f_next = simulate_dynamics(env,x0,u_next)
+        f_prev = simulate_dynamics(env,x0,u_prev)
+
+        B[:,i] = (f_next - f_prev) / delta
     
     return B
 
@@ -146,8 +154,8 @@ def calc_lqr_input(env,x,u):
     x_goal = np.concatenate((env.goal_q,env.goal_dq),0)
     u_goal = np.zeros((2,))
 
-    A = approximate_A(env,x,u)
-    B = approximate_B(env,x,u)
+    A = approximate_A(env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)
+    B = approximate_B(env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)
     
     Q = env.Q
     R = env.R

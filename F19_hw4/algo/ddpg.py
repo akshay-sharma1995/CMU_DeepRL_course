@@ -142,6 +142,7 @@ class DDPG(object):
                         success_vec.append(success)
                         test_rewards.append(total_reward)
                         if i < 9:
+                        # if False:
                                 plt.subplot(3, 3, i+1)
                                 s_vec = np.array(s_vec)
                                 pusher_vec = s_vec[:, :2]

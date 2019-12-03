@@ -63,9 +63,6 @@ def approximate_A(env,simulate_dynamics, x, u, delta=1e-5, dt=1e-5):
     # linearization point
     x0 = x*1.0
     u0 = u*1.0
-    env.state = x0*1.0
-    
-    f0 = simulate_dynamics(env,x0,u0)
 
     A = np.zeros((x.shape[0],x.shape[0]))
     for i in range(x0.shape[0]):
@@ -105,8 +102,6 @@ def approximate_B(env,simulate_dynamics, x, u, delta=1e-5, dt=1e-5):
     # linearization point
     x0 = x*1.0
     u0 = u*1.0
-    env.state = x0*1.0
-    f0 = simulate_dynamics(env,x0,u0,dt)
     
     B = np.zeros((x.shape[0],u.shape[0]))
 
@@ -116,17 +111,16 @@ def approximate_B(env,simulate_dynamics, x, u, delta=1e-5, dt=1e-5):
         u_next[i] += delta
         u_prev[i] -= delta
 
-        env.state = x0*1.0
         f_next = simulate_dynamics(env,x0,u_next)
         f_prev = simulate_dynamics(env,x0,u_prev)
 
-        B[:,i] = (f_next - f_prev) / delta
+        B[:,i] = (f_next - f_prev) / (2*delta)
     
     return B
 
 
-# def calc_lqr_input(env, sim_env):
-def calc_lqr_input(env,x,u):
+def calc_lqr_input(env, sim_env):
+# def calc_lqr_input(env,x,u):
     """Calculate the optimal control input for the given state.
 
     If you are following the API and simulate dynamics is returning
@@ -151,21 +145,21 @@ def calc_lqr_input(env,x,u):
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     
-    x_goal = np.concatenate((env.goal_q,env.goal_dq),0)
-    u_goal = np.zeros((2,))
-
-    A = approximate_A(env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)
-    B = approximate_B(env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)
+    x_goal = np.concatenate((sim_env.goal_q,sim_env.goal_dq),0)
+    x = env.state.copy() 
+    u = np.zeros((action_dim,))
+    A = approximate_A(sim_env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)
+    B = approximate_B(sim_env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)
     
-    Q = env.Q
-    R = env.R
+    Q = env.Q*1.0
+    R = env.R*1.0
     
     P = scipy.linalg.solve_continuous_are(A,B,Q,R) 
     R_inv = scipy.linalg.inv(R)
 
     K = np.matmul(np.matmul(R_inv,B.T) , P)
     u = -np.matmul(K,(x-x_goal))
-    
+    u = np.clip(u,env.action_space.low,env.action_space.high) 
     return u
 
 

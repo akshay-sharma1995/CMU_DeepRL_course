@@ -120,7 +120,6 @@ def approximate_B(env,simulate_dynamics, x, u, delta=1e-5, dt=1e-5):
 
 
 def calc_lqr_input(env, sim_env):
-# def calc_lqr_input(env,x,u):
     """Calculate the optimal control input for the given state.
 
     If you are following the API and simulate dynamics is returning

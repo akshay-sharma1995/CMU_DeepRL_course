@@ -145,7 +145,8 @@ def calc_lqr_input(env, sim_env):
     action_dim = env.action_space.shape[0]
     
     x_goal = np.concatenate((sim_env.goal_q,sim_env.goal_dq),0)
-    x = env.state.copy() 
+
+    x = env.state * 1.0
     u = np.zeros((action_dim,))
     A = approximate_A(sim_env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)
     B = approximate_B(sim_env,simulate_dynamics,x,u,delta=1e-5,dt=1e-5)

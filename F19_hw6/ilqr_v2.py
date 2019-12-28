@@ -1,11 +1,11 @@
 """LQR, iLQR and MPC."""
 
-from deeprl_hw6.controllers import approximate_A, approximate_B
+from controllers import approximate_A, approximate_B
 import numpy as np
 import scipy.linalg
 import pdb
 
-def simulate_dynamics_next(env, x, u, dt):
+def simulate_dynamics_next(env, x, u, dt=1e-5):
     """Step simulator to see how state changes.
 
     Parameters
@@ -91,31 +91,36 @@ def cost_final(env, x):
 
     return l, l_x, l_xx
 
-def simulate(env, x0, U):
+def simulate(env, x0, U, render=False):
 
     env.state = x0 * 1.0
-    traj_horizon = u.shape[0]
+    traj_horizon = U.shape[0]
     x_goal = env.goal*1.0
     
     cost = 0
-    x_seq = np.zeros((traj_horizon+1 , x0.shape))
+    x_seq = np.zeros((traj_horizon+1 , *x0.shape))
     x_seq[0] = x0*1.0
 
     t = 0
     done = False
     
+    total_reward = 0
+
     while (not done) and (t < traj_horizon):
+        if render:
+            env.render()
         x_next, reward, done , info = env.step(U[t])
         x_seq[t+1] = x_next * 1.0
         cost += np.sum(U[t]**2)
         t += 1
-    
+        total_reward += reward*1.0
     cost += 1e4 * np.sum((x_next - x_goal)**2)
+    
+    return x_seq, cost, total_reward
 
-    return x_seq, cost
 
-
-def calc_ilqr_input(env, sim_env, tN=50, max_iter=1e6):
+# def calc_ilqr_input(env, sim_env, tN=50, max_iter=1e6):
+def calc_ilqr_input(env, sim_env,x0, u_seq, tN=50, max_iter=1e6):
     """Calculate the optimal control input for the given state.
 
 
@@ -137,4 +142,64 @@ def calc_ilqr_input(env, sim_env, tN=50, max_iter=1e6):
       The SEQUENCE of commands to execute. The size should be (tN, #parameters)
     """
     
+    state_dim = x0.shape[0]
+    action_dim = u_seq.shape[1]
+    
+    lamb = 1.0
+    lamb_fac = 2.0
+    lamb_max = 1000
+
+    iter_num = 0
+    gen_new_traj = True 
+
+
+    while(iter_num < max_iter):
+    
+        if gen_new_traj:
+            pdb.set_trace()
+            x_seq, cost, reward = simulate(sim_env, x0, u_seq)
+            old_cost = cost * 1.0
+            env.state = x0 * 1.0
+            
+            l, l_x, l_xx, l_u, l_uu, l_ux, f_x, f_u = reset_cost_dynamics(tN,state_dim, action_dim)
+
+            l[-1], l_x[-1], l_xx[-1] = cost_final(sim_env, x_seq[-1])
+            
+            for i in range(tN-1, -1, -1):
+                x = x_seq[i] * 1.0
+                u = u_seq[i] * 1.0
+
+                l[i], l_x[i], l_xx[i], l_u[i], l_uu[i], l_ux[i] = cost_inter(sim_env, x, u)
+                 
+                A = approximate_A(sim_env, simulate_dynamics_next, x, u)
+                B = approximate_B(sim_env, simulate_dynamics_next, x, u)
+
+                f_x[i] = A * 1.0
+                f_u[i] = B * 1.0
+
+                gen_new_traj = False
+            
+            pdb.set_trace()
+            k = np.zeros((tN, action_dim))
+            K = np.zeros((tN, action_dim, state_dim))
+
+            k,K = backward_recursion(k, K, l, l_x, l_xx, l_u. l_uu, l_ux, f_x, f_u , lamb)
+
     return np.zeros((50, 2))
+
+
+def reset_cost_dynamics(tN,state_dim,action_dim):
+    l = np.zeros((tN+1,))
+    l_x = np.zeros((tN+1,state_dim))
+    l_xx = np.zeros((tN+1,state_dim,state_dim))
+    l_u = np.zeros((tN,action_dim))
+    l_uu = np.zeros((tN,action_dim,action_dim))
+    l_ux = np.zeros((tN,action_dim,state_dim))
+    f_x = np.zeros((tN,state_dim,state_dim))
+    f_u = np.zeros((tN,state_dim,action_dim))
+    
+    return l,l_x,l_xx,l_u,l_uu,l_ux,f_x,f_u
+
+
+
+

@@ -28,12 +28,9 @@ def run_lqr(env,plot_path=None,print_res=True):
     q_arr.append(state[0:2]*1.0)
     qdot_arr.append(state[2:]*1.0)
     
-    u_arr.append(u*1.0)
 
     while (not done) and (num_steps<20000):
-        # env.render()
         num_steps += 1
-        # u = calc_lqr_input(dcp(env),state,u)
         u = calc_lqr_input(env,dcp(env))
         next_state,reward,done,info = env.step(u)
         state = next_state * 1.0

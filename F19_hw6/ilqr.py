@@ -138,8 +138,8 @@ def calc_ilqr_input(env, sim_env,x0, u_seq, tN=50, max_iter=1e6):
     """
     
     
-    state_dim = env.observation_space.shape[0]
-    action_dim = env.action_space.shape[0]
+    state_dim = x0.shape[0]
+    action_dim = u_seq.shape[1]
     
     lamb = 1.0
     lamb_fac = 2.0
@@ -168,7 +168,8 @@ def calc_ilqr_input(env, sim_env,x0, u_seq, tN=50, max_iter=1e6):
                 u = u_seq[i] * 1.0
                 
                 l[i],l_x[i],l_xx[i],l_u[i],l_uu[i],l_ux[i] = cost_inter(sim_env,x,u)
-             
+                
+
                 A = approximate_A(sim_env,simulate_dynamics_next,x,u)
                 B = approximate_B(sim_env,simulate_dynamics_next,x,u)
                 

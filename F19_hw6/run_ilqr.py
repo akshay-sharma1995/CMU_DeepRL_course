@@ -1,11 +1,12 @@
 import numpy as np
-from ilqr import *
 import deeprl_hw6
 from copy import deepcopy as dcp
 from utils import plot_prop
 import pdb
 from run_lqr import run_lqr
 from utils import plot_prop, plot_x_v_y
+# from ilqr import *
+from ilqr_v2 import *
 
 def run_ilqr(env,plot_path):
     state_dim = env.observation_space.shape
@@ -28,7 +29,6 @@ def run_ilqr(env,plot_path):
     u_seq =  np.random.uniform([-150,-150],[150,150],size=(tN,2))
     # u_seq = u_seq[0:tN] + np.random.uniform([-1,-1],[1,1],size=(tN,2))
     u_seq,total_cost = calc_ilqr_input(env,dcp(env),x0,u_seq[0:tN],tN=tN)
-    # print(total_cost) 
     x_seq,u_arr, q_arr, qdot_arr, total_reward = use_input(env,x0,u_seq)
     
     print("num_steps: {}, total_reward: {}".format(u_seq.shape[0],total_reward))
